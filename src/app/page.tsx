@@ -975,6 +975,7 @@ export default function HomePage() {
 
   const [lightboxImage, setLightboxImage] = useState<string | null>(null);
   const [copiedHandle, setCopiedHandle] = useState(false);
+  const [peelPulls, setPeelPulls] = useState<Record<string, number>>({});
 
   const [inCall, setInCall] = useState(false);
   const [muted, setMuted] = useState(false);
@@ -2602,11 +2603,7 @@ export default function HomePage() {
       <div className="min-h-screen bg-[#090414] text-[#F8F5FF] flex items-center justify-center p-4">
         <div className="w-full max-w-md rounded-2xl border border-purple-500/25 bg-[#130926]/95 p-6 shadow-2xl">
           <div className="flex flex-col items-center text-center mb-5">
-            <SaturnMascot
-              state="idle"
-              size={84}
-              onInteract={() => {}}
-            />
+            <SaturnMascot state="idle" size={84} />
             <h1 className="mt-2 text-2xl font-black tracking-tight text-white">
               Aura Space
             </h1>
@@ -2798,15 +2795,7 @@ export default function HomePage() {
       <header className="sticky top-0 z-30 border-b border-purple-500/20 bg-[#090414]/90 backdrop-blur-md">
         <div className="mx-auto flex max-w-7xl items-center justify-between gap-3 px-4 py-2.5">
           <div className="flex items-center gap-3 min-w-0">
-            <SaturnMascot
-              state={currentUser.saturnState || "idle"}
-              size={42}
-              onInteract={() =>
-                setSaturnState(
-                  currentUser.saturnState === "celebrate" ? "idle" : "celebrate"
-                )
-              }
-            />
+            <SaturnMascot state={currentUser.saturnState || "idle"} size={42} />
             <div className="min-w-0">
               <div className="flex items-center gap-2">
                 <span className="text-base font-black tracking-tight text-white">
@@ -3343,14 +3332,39 @@ export default function HomePage() {
                     const canManage = canManageItem(post.handle);
                     const hasEgg = hasEasterEggForPost(post.id);
                     const commentDraft = commentInputs[post.id] || "";
+                    const pullValue = peelPulls[post.id] || 0;
 
                     return (
                       <article
                         key={post.id}
                         className="relative overflow-hidden rounded-2xl border border-purple-500/20 bg-[#130926]/90 p-4 space-y-3"
                       >
-                        {hasEgg && <PostPeelUnderlay postId={post.id} />}
-                        {hasEgg && <PostCornerPeelHandle postId={post.id} />}
+                        {hasEgg && (
+                          <PostPeelUnderlay
+                            pullValue={pullValue}
+                            onReset={() =>
+                              setPeelPulls((prev) => ({
+                                ...prev,
+                                [post.id]: 0,
+                              }))
+                            }
+                          />
+                        )}
+                        {hasEgg && (
+                          <PostCornerPeelHandle
+                            pullValue={pullValue}
+                            onPullChange={(valOrUpdater) =>
+                              setPeelPulls((prev) => {
+                                const current = prev[post.id] || 0;
+                                const next =
+                                  typeof valOrUpdater === "function"
+                                    ? valOrUpdater(current)
+                                    : valOrUpdater;
+                                return { ...prev, [post.id]: next };
+                              })
+                            }
+                          />
+                        )}
 
                         <div className="flex items-start justify-between gap-2">
                           <div className="flex items-center gap-2.5 min-w-0">
