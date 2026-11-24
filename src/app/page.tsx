@@ -37,6 +37,9 @@ import {
   X,
 } from "lucide-react";
 import { SaturnMascot, SaturnState } from "@/components/SaturnMascot";
+const SATURN_DEFAULT: SaturnState = 1;
+const SATURN_BOOST: SaturnState = 3;
+
 import {
   hasEasterEggForPost,
   PostCornerPeelHandle,
@@ -997,8 +1000,8 @@ export default function HomePage() {
   const syncChannelRef = useRef<BroadcastChannel | null>(null);
   const remoteSyncLockRef = useRef(false);
   const localStreamRef = useRef<MediaStream | null>(null);
-  const peerConnectionsRef = useRef>(new Map());
-  const remoteAudioElsRef = useRef>(new Map());
+  const peerConnectionsRef = useRef<Map<string, RTCPeerConnection>>(new Map());
+  const remoteAudioElsRef = useRef<Map<string, HTMLAudioElement>>(new Map());
   const audioContextRef = useRef<AudioContext | null>(null);
   const analyserRef = useRef<AnalyserNode | null>(null);
   const meterRafRef = useRef<number | null>(null);
@@ -1051,7 +1054,7 @@ export default function HomePage() {
           friends: [...seed.friends],
           passwordHash,
           salt,
-          saturnState: "idle",
+          saturnState: SATURN_DEFAULT,
           createdAt: "основатель",
         });
       }
@@ -1504,7 +1507,7 @@ export default function HomePage() {
         if (!audioEl) {
           audioEl = document.createElement("audio");
           audioEl.autoplay = true;
-          audioEl.playsInline = true;
+          audioEl.setAttribute("playsinline", "");
           audioEl.muted = deafenedRef.current;
           document.body.appendChild(audioEl);
           remoteAudioElsRef.current.set(targetPeerId, audioEl);
@@ -1726,7 +1729,7 @@ export default function HomePage() {
       inCallRef.current = true;
       setInCall(true);
       setCallSeconds(0);
-      setSaturnState("celebrate");
+      setSaturnState(SATURN_BOOST);
       startVoiceMeter(stream);
 
       if (voiceChannelRef.current) {
@@ -1794,7 +1797,7 @@ export default function HomePage() {
     setNewChannelName("");
     setNewChannelTopic("");
     setShowChannelForm(false);
-    setSaturnState("celebrate");
+    setSaturnState(SATURN_BOOST);
   };
 
   const handleRegister = async (e: React.FormEvent) => {
@@ -1886,7 +1889,7 @@ export default function HomePage() {
         friends: [],
         passwordHash,
         salt,
-        saturnState: "celebrate",
+        saturnState: SATURN_BOOST,
         createdAt: new Date().toLocaleDateString("ru-RU"),
       };
 
@@ -1950,7 +1953,7 @@ export default function HomePage() {
         ...found,
         presence: found.presence || "online",
         lastActive: "в сети",
-        saturnState: "idle",
+        saturnState: SATURN_DEFAULT,
       };
 
       setAccounts((prev) =>
@@ -2070,7 +2073,7 @@ export default function HomePage() {
         friends: [],
         passwordHash,
         salt,
-        saturnState: "celebrate",
+        saturnState: SATURN_BOOST,
         createdAt: new Date().toLocaleDateString("ru-RU"),
       };
 
@@ -2205,7 +2208,7 @@ export default function HomePage() {
       lastActive: "в сети",
       passwordHash: nextPasswordHash,
       salt: nextSalt,
-      saturnState: "celebrate",
+      saturnState: SATURN_BOOST,
     };
 
     setAccounts((prev) =>
@@ -2282,7 +2285,7 @@ export default function HomePage() {
       setFriendHandleInput("");
     }
     setFriendMessage(`Добавил ${normalized} в друзья!`);
-    setSaturnState("celebrate");
+    setSaturnState(SATURN_BOOST);
   };
 
   const handleRemoveFriend = (targetHandle: string) => {
@@ -2351,7 +2354,7 @@ export default function HomePage() {
     if (postImageInputRef.current) {
       postImageInputRef.current.value = "";
     }
-    setSaturnState("celebrate");
+    setSaturnState(SATURN_BOOST);
   };
 
   const handleStartEditPost = (post: PostItem) => {
@@ -2603,7 +2606,7 @@ export default function HomePage() {
       <div className="min-h-screen bg-[#090414] text-[#F8F5FF] flex items-center justify-center p-4">
         <div className="w-full max-w-md rounded-2xl border border-purple-500/25 bg-[#130926]/95 p-6 shadow-2xl">
           <div className="flex flex-col items-center text-center mb-5">
-            <SaturnMascot state="idle" size={84} />
+            <SaturnMascot state={SATURN_DEFAULT} size={84} />
             <h1 className="mt-2 text-2xl font-black tracking-tight text-white">
               Aura Space
             </h1>
@@ -2795,7 +2798,7 @@ export default function HomePage() {
       <header className="sticky top-0 z-30 border-b border-purple-500/20 bg-[#090414]/90 backdrop-blur-md">
         <div className="mx-auto flex max-w-7xl items-center justify-between gap-3 px-4 py-2.5">
           <div className="flex items-center gap-3 min-w-0">
-            <SaturnMascot state={currentUser.saturnState || "idle"} size={42} />
+            <SaturnMascot state={currentUser.saturnState || SATURN_DEFAULT} onRevive={() => setSaturnState(SATURN_DEFAULT)} />
             <div className="min-w-0">
               <div className="flex items-center gap-2">
                 <span className="text-base font-black tracking-tight text-white">
