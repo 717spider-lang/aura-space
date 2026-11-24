@@ -215,28 +215,16 @@ const CREATOR_ACCOUNTS_SEED: Array<{
   defaultPassword: string;
 }> = [
   {
-    id: "creator-artem",
-    username: "Артём",
-    handle: "@artem",
-    email: "artem@auraspace.local",
-    bio: "Основатель и программист Aura Space.",
+    id: "creator-system-404",
+    username: "system_404",
+    handle: "@system_404",
+    email: "system_404@auraspace.local",
+    bio: "Создатель и разработчик Aura Space.",
     mood: "В сборке Aura Space",
     presence: "online",
     banner: BANNER_PRESETS[0].gradient,
-    friends: ["@zahar"],
-    defaultPassword: "aura2026",
-  },
-  {
-    id: "creator-zahar",
-    username: "Захар",
-    handle: "@zahar",
-    email: "zahar@auraspace.local",
-    bio: "Основатель и дизайнер Aura Space.",
-    mood: "Дизайн и эфир",
-    presence: "online",
-    banner: BANNER_PRESETS[3].gradient,
-    friends: ["@artem"],
-    defaultPassword: "aura2026",
+    friends: [],
+    defaultPassword: "system_404",
   },
 ];
 
@@ -266,35 +254,26 @@ const INITIAL_POSTS: PostItem[] = [
   {
     id: "post-1",
     roomId: "general",
-    author: "Артём",
-    handle: "@artem",
+    author: "system_404",
+    handle: "@system_404",
     avatar: null,
-    text: "Дрейф на месте, каналы, реакции, закреп и обложки профиля подключены. Погнали тестировать, @zahar!",
+    text: "Орбита запущена, каналы, реакции, закреп и обложки профиля подключены. Погнали тестировать!",
     image: null,
     createdAt: "только что",
     pinned: true,
     likes: 3,
     likedByMe: false,
     reactions: {
-      "🔥": ["@artem", "@zahar"],
-      "👾": ["@zahar"],
+      "🔥": ["@system_404"],
+      "👾": ["@system_404"],
     },
-    comments: [
-      {
-        id: "c-1",
-        author: "Захар",
-        handle: "@zahar",
-        avatar: null,
-        text: "Свои каналы, репосты и список друзей уже работают, @artem.",
-        createdAt: "1 мин назад",
-      },
-    ],
+    comments: [],
   },
   {
     id: "post-2",
     roomId: "dev",
-    author: "Захар",
-    handle: "@zahar",
+    author: "system_404",
+    handle: "@system_404",
     avatar: null,
     text: "Аватарка, статус активности и баннер подтягиваются к профилю автоматически.",
     image: null,
@@ -302,15 +281,15 @@ const INITIAL_POSTS: PostItem[] = [
     likes: 4,
     likedByMe: true,
     reactions: {
-      "❤️": ["@artem"],
+      "❤️": ["@system_404"],
     },
     comments: [],
   },
   {
     id: "post-3",
     roomId: "chill",
-    author: "Артём",
-    handle: "@artem",
+    author: "system_404",
+    handle: "@system_404",
     avatar: null,
     text: "Тёмный неон и пустота вокруг — самое то для ночных сессий.",
     image: null,
@@ -318,7 +297,7 @@ const INITIAL_POSTS: PostItem[] = [
     likes: 2,
     likedByMe: false,
     reactions: {
-      "💀": ["@zahar"],
+      "💀": ["@system_404"],
     },
     comments: [],
   },
@@ -328,45 +307,24 @@ const INITIAL_MESSAGES: ChatMessage[] = [
   {
     id: "m-1",
     roomId: "general",
-    author: "Артём",
-    handle: "@artem",
+    author: "system_404",
+    handle: "@system_404",
     avatar: null,
     text: "Всем привет в Aura Space. Закрепил правила эфира вверху канала.",
     createdAt: "14:02",
     pinned: true,
     reactions: {
-      "🔥": ["@zahar"],
+      "🔥": ["@system_404"],
     },
   },
   {
     id: "m-2",
-    roomId: "general",
-    author: "Захар",
-    handle: "@zahar",
-    avatar: null,
-    text: "Чат канала работает, @artem закидывай сообщения и реакции.",
-    createdAt: "14:03",
-    reactions: {
-      "👾": ["@artem"],
-    },
-  },
-  {
-    id: "m-3",
     roomId: "dev",
-    author: "Артём",
-    handle: "@artem",
+    author: "system_404",
+    handle: "@system_404",
     avatar: null,
     text: "Проверяем каналы, друзей, репосты и аватарки.",
     createdAt: "14:05",
-  },
-  {
-    id: "m-4",
-    roomId: "chill",
-    author: "Захар",
-    handle: "@zahar",
-    avatar: null,
-    text: "Какой трек сейчас на фоне?",
-    createdAt: "14:10",
   },
 ];
 
@@ -908,7 +866,7 @@ export default function HomePage() {
           }
         }
 
-        // Встроенные аккаунты создателей: вход возможен только по паролю
+        // Встроенный аккаунт создателя @system_404 (вход только по паролю system_404)
         for (const seed of CREATOR_ACCOUNTS_SEED) {
           const exists = loadedAccounts.some(
             (a) => safeLower(a.handle) === safeLower(seed.handle)
@@ -1600,7 +1558,7 @@ export default function HomePage() {
   }, [accounts]);
 
   const knownHandlesSet = useMemo(() => {
-    const set = new Set<string>(["@artem", "@zahar"]);
+    const set = new Set<string>(["@system_404"]);
     for (const acc of accounts) {
       const key = safeLower(acc?.handle);
       if (key) set.add(key);
@@ -3144,7 +3102,7 @@ export default function HomePage() {
                       type="text"
                       value={loginIdentifier}
                       onChange={(e) => setLoginIdentifier(e.target.value)}
-                      placeholder="name@example.com, @handle или имя"
+                      placeholder="@system_404 или email"
                       className="w-full rounded-xl border border-purple-500/30 bg-[#090414] px-3.5 py-2.5 text-sm text-white placeholder-purple-300/35 outline-none focus:border-pink-400/70"
                     />
                   </label>
@@ -3699,7 +3657,7 @@ export default function HomePage() {
                         type="text"
                         value={friendHandleInput}
                         onChange={(e) => setFriendHandleInput(e.target.value)}
-                        placeholder="@zahar или zahar"
+                        placeholder="@system_404 или handle"
                         className="min-w-[200px] flex-1 rounded-xl border border-purple-500/30 bg-[#090414] px-3.5 py-2 text-sm text-white placeholder-purple-300/35 outline-none focus:border-pink-400/70"
                       />
                       <button
