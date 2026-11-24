@@ -993,9 +993,12 @@ export default function HomePage() {
   const postImageInputRef = useRef<HTMLInputElement | null>(null);
   const chatEndRef = useRef<HTMLDivElement | null>(null);
 
-  const peerIdRef = useRef<string>(
-    `peer-${Math.random().toString(36).slice(2, 10)}`
-  );
+  const peerIdRef = useRef<string>("");
+  useEffect(() => {
+    if (!peerIdRef.current) {
+      peerIdRef.current = `peer-${Math.random().toString(36).slice(2, 10)}`;
+    }
+  }, []);
   const voiceChannelRef = useRef<BroadcastChannel | null>(null);
   const syncChannelRef = useRef<BroadcastChannel | null>(null);
   const remoteSyncLockRef = useRef(false);
