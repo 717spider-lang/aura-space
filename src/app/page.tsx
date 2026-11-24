@@ -42,6 +42,7 @@ import {
   PostCornerPeelHandle,
   PostPeelUnderlay,
 } from "@/components/SocialNetworkEasterEgg";
+import { CloudPostRecord, getSupabaseClient } from "@/lib/supabasePosts";
 
 const REACTION_EMOJIS = ["🔥", "💀", "👾", "❤️"] as const;
 type ReactionEmoji = (typeof REACTION_EMOJIS)[number];
@@ -379,6 +380,7 @@ const SESSION_KEY = "aura_space_session_v2";
 const LAST_LOGIN_KEY = "aura_space_last_login_v2";
 const DATA_KEY = "aura_space_data_v2";
 const VOICE_CHANNEL_NAME = "aura_space_voice_rtc_v1";
+const SYNC_CHANNEL_NAME = "aura_space_live_sync_v1";
 const MILESTONE_SUBSCRIBERS = 100_000;
 const MAX_POST_IMAGE_BYTES = 2_500_000;
 const MAX_BANNER_IMAGE_BYTES = 2_000_000;
@@ -498,15 +500,6 @@ const INITIAL_MESSAGES: ChatMessage[] = [
       "🔥": ["@system_404"],
     },
   },
-  {
-    id: "m-2",
-    roomId: "dev",
-    author: "system_404",
-    handle: "@system_404",
-    avatar: null,
-    text: "Проверяем каналы, друзей, репосты и аватарки.",
-    createdAt: "14:05",
-  },
 ];
 
 function safeLower(val: unknown): string {
@@ -603,6 +596,58 @@ function textMentionsHandle(text: string, handle: string): boolean {
   const escaped = handle.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
   const regex = new RegExp(`(^|[^a-zA-Z0-9_])${escaped}(?=$|[^a-zA-Z0-9_])`, "i");
   return regex.test(text);
+}
+
+function toCloudPostRow(post: PostItem): CloudPostRecord {
+  return {
+    id: post.id,
+    room_id: post.roomId,
+    author: post.author,
+    handle: post.handle,
+    avatar: post.avatar ?? null,
+    text: post.text ?? "",
+    image: post.image ?? null,
+    created_at: post.createdAt,
+    edited_at: post.editedAt ?? null,
+    pinned: Boolean(post.pinned),
+    likes: typeof post.likes === "number" ? post.likes : 0,
+    liked_by_me: Boolean(post.likedByMe),
+    reactions: (post.reactions as Record<string, string[]>) ?? {},
+    repost_of: post.repostOf ?? null,
+    comments: Array.isArray(post.comments) ? post.comments : [],
+  };
+}
+
+function fromCloudPostRow(row: CloudPostRecord): PostItem {
+  return {
+    id: row.id,
+    roomId: row.room_id || "general",
+    author: row.author || "Участник",
+    handle: row.handle || "@user",
+    avatar: row.avatar ?? null,
+    text: row.text ?? "",
+    image: row.image ?? null,
+    createdAt: row.created_at || "только что",
+    editedAt: row.edited_at ?? null,
+    pinned: Boolean(row.pinned),
+    likes: typeof row.likes === "number" ? row.likes : 0,
+    likedByMe: Boolean(row.liked_by_me),
+    reactions: (row.reactions as ReactionMap) ?? {},
+    repostOf: (row.repost_of as RepostSnapshot | null) ?? null,
+    comments: Array.isArray(row.comments) ? (row.comments as CommentItem[]) : [],
+  };
+}
+
+async function upsertCloudPost(post: PostItem) {
+  const supabase = getSupabaseClient();
+  if (!supabase) return;
+  await supabase.from("posts").upsert(toCloudPostRow(post), { onConflict: "id" });
+}
+
+async function deleteCloudPost(postId: string) {
+  const supabase = getSupabaseClient();
+  if (!supabase) return;
+  await supabase.from("posts").delete().eq("id", postId);
 }
 
 function RichTextWithMentions({
@@ -911,246 +956,210 @@ export default function HomePage() {
 
   const [posts, setPosts] = useState<PostItem[]>(INITIAL_POSTS);
   const [messages, setMessages] = useState<ChatMessage[]>(INITIAL_MESSAGES);
-  const [postPeelMap, setPostPeelMap] = useState<Record<string, number>>({});
 
-  const [postInput, setPostInput] = useState("");
+  const [postText, setPostText] = useState("");
   const [postImage, setPostImage] = useState<string | null>(null);
-  const [postImageUrl, setPostImageUrl] = useState("");
-  const [showImageUrlInput, setShowImageUrlInput] = useState(false);
   const [postError, setPostError] = useState<string | null>(null);
-  const [lightboxImage, setLightboxImage] = useState<string | null>(null);
+  const [repostTarget, setRepostTarget] = useState<PostItem | null>(null);
+  const [repostNote, setRepostNote] = useState("");
 
   const [editingPostId, setEditingPostId] = useState<string | null>(null);
   const [editingPostText, setEditingPostText] = useState("");
 
-  const [repostingPost, setRepostingPost] = useState<PostItem | null>(null);
-  const [repostTargetRoomId, setRepostTargetRoomId] = useState<string>("general");
-  const [repostNote, setRepostNote] = useState("");
-
-  const [chatInput, setChatInput] = useState("");
-  const [editingMsgId, setEditingMsgId] = useState<string | null>(null);
-  const [editingMsgText, setEditingMsgText] = useState("");
-
-  const [commentDrafts, setCommentDrafts] = useState<Record<string, string>>({});
-  const [openComments, setOpenComments] = useState<Record<string, boolean>>({
-    "post-1": true,
-  });
-
-  // Голосовой чат (WebRTC + Web Audio API)
-  const [inVoiceCall, setInVoiceCall] = useState(false);
-  const [voiceRoomId, setVoiceRoomId] = useState<string>("general");
-  const [micEnabled, setMicEnabled] = useState(true);
-  const [speakerMuted, setSpeakerMuted] = useState(false);
-  const [selfMonitor, setSelfMonitor] = useState(false);
-  const [voiceLevel, setVoiceLevel] = useState(0);
-  const [callSeconds, setCallSeconds] = useState(0);
-  const [voiceError, setVoiceError] = useState<string | null>(null);
-  const [voiceStatus, setVoiceStatus] = useState<string | null>(null);
-  const [remotePeers, setRemotePeers] = useState<Record<string, RemoteVoicePeer>>(
+  const [commentInputs, setCommentInputs] = useState<Record<string, string>>(
     {}
   );
-  const [manualOfferText, setManualOfferText] = useState("");
-  const [manualAnswerInput, setManualAnswerInput] = useState("");
-  const [copiedOffer, setCopiedOffer] = useState(false);
+  const [chatText, setChatText] = useState("");
+  const [editingMessageId, setEditingMessageId] = useState<string | null>(null);
+  const [editingMessageText, setEditingMessageText] = useState("");
 
-  const localPeerIdRef = useRef("");
-  const voiceRoomIdRef = useRef("general");
-  const currentUserRef = useRef<UserAccount | null>(null);
-  const speakerMutedRef = useRef(false);
+  const [lightboxImage, setLightboxImage] = useState<string | null>(null);
+  const [copiedHandle, setCopiedHandle] = useState(false);
 
+  const [inCall, setInCall] = useState(false);
+  const [muted, setMuted] = useState(false);
+  const [deafened, setDeafened] = useState(false);
+  const [callSeconds, setCallSeconds] = useState(0);
+  const [voiceLevel, setVoiceLevel] = useState(0);
+  const [callStatus, setCallStatus] = useState<string | null>(null);
+  const [remotePeers, setRemotePeers] = useState<RemoteVoicePeer[]>([]);
+
+  const avatarInputRef = useRef<HTMLInputElement | null>(null);
+  const bannerInputRef = useRef<HTMLInputElement | null>(null);
+  const postImageInputRef = useRef<HTMLInputElement | null>(null);
+  const chatEndRef = useRef<HTMLDivElement | null>(null);
+
+  const peerIdRef = useRef<string>(
+    `peer-${Math.random().toString(36).slice(2, 10)}`
+  );
+  const voiceChannelRef = useRef<BroadcastChannel | null>(null);
+  const syncChannelRef = useRef<BroadcastChannel | null>(null);
+  const remoteSyncLockRef = useRef(false);
   const localStreamRef = useRef<MediaStream | null>(null);
-  const audioCtxRef = useRef<AudioContext | null>(null);
+  const peerConnectionsRef = useRef>(new Map());
+  const remoteAudioElsRef = useRef>(new Map());
+  const audioContextRef = useRef<AudioContext | null>(null);
   const analyserRef = useRef<AnalyserNode | null>(null);
-  const rafLevelRef = useRef<number | null>(null);
-  const broadcastRef = useRef<BroadcastChannel | null>(null);
-  const peerConnectionsRef = useRef(new Map<string, RTCPeerConnection>());
-  const remoteAudioMapRef = useRef(new Map<string, HTMLAudioElement>());
-  const manualPcRef = useRef<RTCPeerConnection | null>(null);
-
-  const getLocalPeerId = useCallback(() => {
-    if (!localPeerIdRef.current) {
-      localPeerIdRef.current = `peer-${Math.random().toString(36).slice(2, 9)}`;
-    }
-    return localPeerIdRef.current;
-  }, []);
+  const meterRafRef = useRef<number | null>(null);
+  const mutedRef = useRef(false);
+  const deafenedRef = useRef(false);
+  const inCallRef = useRef(false);
+  const activeRoomIdRef = useRef("general");
 
   useEffect(() => {
-    getLocalPeerId();
-  }, [getLocalPeerId]);
+    mutedRef.current = muted;
+    if (localStreamRef.current) {
+      localStreamRef.current.getAudioTracks().forEach((track) => {
+        track.enabled = !muted;
+      });
+    }
+  }, [muted]);
+
+  useEffect(() => {
+    deafenedRef.current = deafened;
+    remoteAudioElsRef.current.forEach((audioEl) => {
+      audioEl.muted = deafened;
+    });
+  }, [deafened]);
+
+  useEffect(() => {
+    activeRoomIdRef.current = activeRoomId;
+  }, [activeRoomId]);
 
   useEffect(() => {
     let cancelled = false;
 
-    async function initStorage() {
+    async function initStore() {
+      const seededCreators: UserAccount[] = [];
+      for (const seed of CREATOR_ACCOUNTS_SEED) {
+        const salt = `aura-seed-${seed.id}`;
+        const passwordHash = await hashPassword(seed.defaultPassword, salt);
+        seededCreators.push({
+          id: seed.id,
+          username: seed.username,
+          handle: seed.handle,
+          email: seed.email,
+          accountType: "official",
+          subscribers: MILESTONE_SUBSCRIBERS,
+          bio: seed.bio,
+          mood: seed.mood,
+          presence: seed.presence,
+          lastActive: "в сети",
+          avatar: null,
+          banner: seed.banner,
+          friends: [...seed.friends],
+          passwordHash,
+          salt,
+          saturnState: "idle",
+          createdAt: "основатель",
+        });
+      }
+
+      let loadedAccounts: UserAccount[] = [];
+      let savedSessionId: string | null = null;
+      let savedLastLogin = "";
+      let loadedRooms: RoomItem[] = DEFAULT_ROOMS;
+      let loadedPosts: PostItem[] = INITIAL_POSTS;
+      let loadedMessages: ChatMessage[] = INITIAL_MESSAGES;
+
       try {
-        let loadedAccounts: UserAccount[] = [];
-        const rawAccounts = window.localStorage.getItem(ACCOUNTS_KEY);
+        const rawAccounts = localStorage.getItem(ACCOUNTS_KEY);
         if (rawAccounts) {
-          const parsedAccounts = JSON.parse(rawAccounts);
-          if (Array.isArray(parsedAccounts)) {
-            loadedAccounts = parsedAccounts
-              .filter(
-                (acc): acc is UserAccount => !!acc && typeof acc === "object"
-              )
-              .map((acc) => {
-                const normalizedH =
-                  typeof acc.handle === "string" && acc.handle.trim()
-                    ? normalizeHandle(acc.handle) || "@user"
-                    : "@user";
-                const isCreator = isReservedCreatorHandle(normalizedH);
-                return {
-                  ...acc,
-                  id:
-                    typeof acc.id === "string"
-                      ? acc.id
-                      : `usr-${Math.random().toString(36).slice(2, 8)}`,
-                  username:
-                    typeof acc.username === "string" ? acc.username : "Участник",
-                  handle: normalizedH,
-                  email: typeof acc.email === "string" ? acc.email : "",
-                  accountType: isCreator ? "official" : "personal",
-                  subscribers:
-                    typeof acc.subscribers === "number" &&
-                    Number.isFinite(acc.subscribers)
-                      ? Math.max(0, Math.floor(acc.subscribers))
-                      : 0,
-                  bio: typeof acc.bio === "string" ? acc.bio : "",
-                  mood: typeof acc.mood === "string" ? acc.mood : "На орбите",
-                  presence:
-                    acc.presence === "online" ||
-                    acc.presence === "building" ||
-                    acc.presence === "orbit"
-                      ? acc.presence
-                      : "online",
-                  lastActive:
-                    typeof acc.lastActive === "string"
-                      ? acc.lastActive
-                      : "только что",
-                  avatar: typeof acc.avatar === "string" ? acc.avatar : null,
-                  banner:
-                    typeof acc.banner === "string"
-                      ? acc.banner
-                      : BANNER_PRESETS[0].gradient,
-                  friends: Array.isArray(acc.friends)
-                    ? acc.friends.filter((f): f is string => typeof f === "string")
-                    : [],
-                  saturnState:
-                    acc.saturnState === "blackhole" ||
-                    acc.saturnState === "slow1" ||
-                    (typeof acc.saturnState === "number" &&
-                      acc.saturnState >= 1 &&
-                      acc.saturnState <= 7)
-                      ? acc.saturnState
-                      : 1,
-                  createdAt:
-                    typeof acc.createdAt === "string" ? acc.createdAt : "сегодня",
-                };
-              });
-          }
-        }
-
-        // Встроенный аккаунт создателя @system_404 (вход только по паролю system_404)
-        for (const seed of CREATOR_ACCOUNTS_SEED) {
-          const exists = loadedAccounts.some(
-            (a) => safeLower(a.handle) === safeLower(seed.handle)
-          );
-          if (!exists) {
-            const salt = generateSalt();
-            const passwordHash = await hashPassword(seed.defaultPassword, salt);
-            loadedAccounts.unshift({
-              id: seed.id,
-              username: seed.username,
-              handle: seed.handle,
-              email: seed.email,
-              accountType: "official",
-              subscribers: 0,
-              bio: seed.bio,
-              mood: seed.mood,
-              presence: seed.presence,
-              lastActive: "в сети",
-              avatar: null,
-              banner: seed.banner,
-              friends: seed.friends,
-              passwordHash,
-              salt,
-              saturnState: 1,
-              createdAt: "основание",
-            });
-          }
-        }
-
-        if (cancelled) return;
-        setAccounts(loadedAccounts);
-
-        const rawSession = window.localStorage.getItem(SESSION_KEY);
-        if (rawSession && loadedAccounts.some((a) => a.id === rawSession)) {
-          setCurrentUserId(rawSession);
-        }
-
-        const rawLastLogin = window.localStorage.getItem(LAST_LOGIN_KEY);
-        if (rawLastLogin) {
-          setLoginIdentifier(rawLastLogin);
-        }
-
-        const rawData = window.localStorage.getItem(DATA_KEY);
-        if (rawData) {
-          const parsedData = JSON.parse(rawData);
-          if (Array.isArray(parsedData.rooms) && parsedData.rooms.length > 0) {
-            setRooms(parsedData.rooms);
-          }
-          if (Array.isArray(parsedData.posts)) {
-            setPosts(
-              parsedData.posts
-                .filter((p: unknown): p is PostItem => !!p && typeof p === "object")
-                .map((p: PostItem) => ({
-                  ...p,
-                  author: typeof p.author === "string" ? p.author : "Участник",
-                  handle:
-                    typeof p.handle === "string" && p.handle.trim()
-                      ? p.handle
-                      : "@user",
-                  text: typeof p.text === "string" ? p.text : "",
-                  comments: Array.isArray(p.comments) ? p.comments : [],
-                }))
+          const parsed = JSON.parse(rawAccounts);
+          if (Array.isArray(parsed)) {
+            loadedAccounts = parsed.filter(
+              (a) => a && typeof a.id === "string" && typeof a.handle === "string"
             );
-          }
-          if (Array.isArray(parsedData.messages)) {
-            setMessages(
-              parsedData.messages
-                .filter((m: unknown): m is ChatMessage => !!m && typeof m === "object")
-                .map((m: ChatMessage) => ({
-                  ...m,
-                  author: typeof m.author === "string" ? m.author : "Участник",
-                  handle:
-                    typeof m.handle === "string" && m.handle.trim()
-                      ? m.handle
-                      : "@user",
-                  text: typeof m.text === "string" ? m.text : "",
-                }))
-            );
-          }
-          if (typeof parsedData.activeRoomId === "string") {
-            setActiveRoomId(parsedData.activeRoomId);
-          }
-          if (
-            parsedData.activeTab === "feed" ||
-            parsedData.activeTab === "chat" ||
-            parsedData.activeTab === "profile" ||
-            parsedData.activeTab === "friends"
-          ) {
-            setActiveTab(parsedData.activeTab);
           }
         }
       } catch {
-        // Игнорируем ошибки чтения хранилища
-      } finally {
-        if (!cancelled) {
-          setHydrated(true);
+        loadedAccounts = [];
+      }
+
+      const mergedMap = new Map<string, UserAccount>();
+      for (const creator of seededCreators) {
+        const existing = loadedAccounts.find(
+          (a) => safeLower(a.handle) === safeLower(creator.handle)
+        );
+        if (existing) {
+          mergedMap.set(existing.id, {
+            ...existing,
+            accountType: "official",
+            subscribers: Math.max(
+              typeof existing.subscribers === "number" ? existing.subscribers : 0,
+              MILESTONE_SUBSCRIBERS
+            ),
+            presence: existing.presence || creator.presence,
+            lastActive: existing.lastActive || "в сети",
+            banner: existing.banner || creator.banner,
+          });
+        } else {
+          mergedMap.set(creator.id, creator);
         }
       }
+
+      for (const acc of loadedAccounts) {
+        if (isReservedCreatorHandle(acc.handle)) continue;
+        const normalizedSubs =
+          typeof acc.subscribers === "number" && Number.isFinite(acc.subscribers)
+            ? Math.max(0, acc.subscribers)
+            : 0;
+        mergedMap.set(acc.id, {
+          ...acc,
+          accountType: acc.accountType === "official" ? "official" : "personal",
+          subscribers: normalizedSubs,
+          presence: acc.presence || "online",
+          lastActive: acc.lastActive || "в сети",
+          banner: acc.banner || BANNER_PRESETS[0].gradient,
+        });
+      }
+
+      const finalAccounts = Array.from(mergedMap.values());
+
+      try {
+        savedSessionId = sessionStorage.getItem(SESSION_KEY);
+        savedLastLogin = localStorage.getItem(LAST_LOGIN_KEY) || "";
+      } catch {
+        savedSessionId = null;
+        savedLastLogin = "";
+      }
+
+      const validSessionUser = savedSessionId
+        ? finalAccounts.find((a) => a.id === savedSessionId) || null
+        : null;
+
+      try {
+        const rawData = localStorage.getItem(DATA_KEY);
+        if (rawData) {
+          const parsedData = JSON.parse(rawData);
+          if (Array.isArray(parsedData.rooms) && parsedData.rooms.length > 0) {
+            loadedRooms = parsedData.rooms;
+          }
+          if (Array.isArray(parsedData.posts)) {
+            loadedPosts = parsedData.posts;
+          }
+          if (Array.isArray(parsedData.messages)) {
+            loadedMessages = parsedData.messages;
+          }
+        }
+      } catch {
+        // ignore corrupted local data
+      }
+
+      if (cancelled) return;
+
+      setAccounts(finalAccounts);
+      setCurrentUserId(validSessionUser ? validSessionUser.id : null);
+      if (savedLastLogin) {
+        setLoginIdentifier(savedLastLogin);
+      }
+      setRooms(loadedRooms);
+      setPosts(loadedPosts);
+      setMessages(loadedMessages);
+      setHydrated(true);
     }
 
-    initStorage();
+    initStore();
     return () => {
       cancelled = true;
     };
@@ -1159,1168 +1168,668 @@ export default function HomePage() {
   useEffect(() => {
     if (!hydrated) return;
     try {
-      window.localStorage.setItem(ACCOUNTS_KEY, JSON.stringify(accounts));
+      localStorage.setItem(ACCOUNTS_KEY, JSON.stringify(accounts));
     } catch {
-      // Игнорируем ошибки записи
+      // ignore storage quota errors
     }
-  }, [hydrated, accounts]);
+  }, [accounts, hydrated]);
 
   useEffect(() => {
     if (!hydrated) return;
     try {
       if (currentUserId) {
-        window.localStorage.setItem(SESSION_KEY, currentUserId);
+        sessionStorage.setItem(SESSION_KEY, currentUserId);
       } else {
-        window.localStorage.removeItem(SESSION_KEY);
+        sessionStorage.removeItem(SESSION_KEY);
       }
     } catch {
-      // Игнорируем ошибки записи
+      // ignore storage errors
     }
-  }, [hydrated, currentUserId]);
+  }, [currentUserId, hydrated]);
 
   useEffect(() => {
     if (!hydrated) return;
     try {
-      window.localStorage.setItem(
+      localStorage.setItem(
         DATA_KEY,
-        JSON.stringify({
-          rooms,
-          posts,
-          messages,
-          activeRoomId,
-          activeTab,
-        })
+        JSON.stringify({ rooms, posts, messages })
       );
     } catch {
-      // Игнорируем ошибки записи
+      // ignore storage errors
     }
-  }, [hydrated, rooms, posts, messages, activeRoomId, activeTab]);
-
-  const currentUser = useMemo(
-    () => accounts.find((u) => u.id === currentUserId) ?? null,
-    [accounts, currentUserId]
-  );
-
-  // В быстром переключении показываем только личные аккаунты (и текущий активный)
-  const quickSwitchAccounts = useMemo(
-    () =>
-      accounts.filter(
-        (acc) => acc.accountType !== "official" || acc.id === currentUserId
-      ),
-    [accounts, currentUserId]
-  );
-
-  const currentUserHandle = currentUser?.handle ?? "";
-  const currentUserHandleLower = safeLower(currentUserHandle);
-
-  useEffect(() => {
-    currentUserRef.current = currentUser;
-  }, [currentUser]);
-
-  useEffect(() => {
-    speakerMutedRef.current = speakerMuted;
-    remoteAudioMapRef.current.forEach((audioEl) => {
-      audioEl.muted = speakerMuted;
-    });
-  }, [speakerMuted]);
-
-  useEffect(() => {
-    if (!currentUser) return;
-    setProfileUsername(currentUser.username || "");
-    setProfilePresence(currentUser.presence || "online");
-    setProfileMood(currentUser.mood || "На орбите");
-    setProfileBio(currentUser.bio || "");
-    setProfileAvatar(currentUser.avatar ?? null);
-    setProfileBanner(currentUser.banner ?? BANNER_PRESETS[0].gradient);
-    setProfileNewPassword("");
-    setProfileError(null);
-  }, [currentUser]);
-
-  useEffect(() => {
-    if (!inVoiceCall) return;
-    const timer = window.setInterval(() => {
-      setCallSeconds((s) => s + 1);
-    }, 1000);
-    return () => window.clearInterval(timer);
-  }, [inVoiceCall]);
-
-  useEffect(() => {
-    const stream = localStreamRef.current;
-    if (!stream) return;
-    for (const track of stream.getAudioTracks()) {
-      track.enabled = micEnabled;
+    if (!remoteSyncLockRef.current && syncChannelRef.current) {
+      syncChannelRef.current.postMessage({ type: "posts", payload: posts });
     }
-  }, [micEnabled]);
-
-  const cleanupVoiceSession = useCallback(
-    (notifyPeer = true) => {
-      if (rafLevelRef.current !== null) {
-        window.cancelAnimationFrame(rafLevelRef.current);
-        rafLevelRef.current = null;
-      }
-      analyserRef.current = null;
-
-      if (audioCtxRef.current) {
-        audioCtxRef.current.close().catch(() => {});
-        audioCtxRef.current = null;
-      }
-
-      if (localStreamRef.current) {
-        for (const track of localStreamRef.current.getTracks()) {
-          track.stop();
-        }
-        localStreamRef.current = null;
-      }
-
-      peerConnectionsRef.current.forEach((pc) => pc.close());
-      peerConnectionsRef.current.clear();
-
-      if (manualPcRef.current) {
-        manualPcRef.current.close();
-        manualPcRef.current = null;
-      }
-
-      remoteAudioMapRef.current.forEach((el) => {
-        el.srcObject = null;
-        el.remove();
-      });
-      remoteAudioMapRef.current.clear();
-
-      if (notifyPeer && broadcastRef.current) {
-        try {
-          const user = currentUserRef.current;
-          const pkt: VoiceSignalPacket = {
-            type: "leave",
-            peerId: getLocalPeerId(),
-            roomId: voiceRoomIdRef.current,
-            username: user?.username || "Участник",
-            handle: user?.handle || "@user",
-          };
-          broadcastRef.current.postMessage(pkt);
-        } catch {
-          // Игнорируем ошибки закрытого канала
-        }
-      }
-
-      if (broadcastRef.current) {
-        broadcastRef.current.close();
-        broadcastRef.current = null;
-      }
-
-      setRemotePeers({});
-      setVoiceLevel(0);
-      setCallSeconds(0);
-      setInVoiceCall(false);
-      setManualOfferText("");
-      setManualAnswerInput("");
-      setCopiedOffer(false);
-    },
-    [getLocalPeerId]
-  );
+  }, [rooms, posts, messages, hydrated]);
 
   useEffect(() => {
-    return () => {
-      cleanupVoiceSession(false);
-    };
-  }, [cleanupVoiceSession]);
+    if (!hydrated) return;
+    const supabase = getSupabaseClient();
+    if (!supabase) return;
 
-  const attachRemoteAudioStream = useCallback(
-    (peerId: string, username: string, handle: string, stream: MediaStream) => {
-      let audioEl = remoteAudioMapRef.current.get(peerId);
-      if (!audioEl) {
-        audioEl = document.createElement("audio");
-        audioEl.autoplay = true;
-        audioEl.setAttribute("playsinline", "true");
-        remoteAudioMapRef.current.set(peerId, audioEl);
-      }
-      audioEl.muted = speakerMutedRef.current;
-      audioEl.srcObject = stream;
-      audioEl.play().catch(() => {});
+    let active = true;
 
-      setRemotePeers((prev) => ({
-        ...prev,
-        [peerId]: {
-          peerId,
-          username,
-          handle,
-        },
-      }));
-    },
-    []
-  );
+    async function loadCloudPosts() {
+      const { data, error } = await supabase!
+        .from("posts")
+        .select("*")
+        .order("inserted_at", { ascending: false })
+        .limit(100);
 
-  const createPeerConnectionFor = useCallback(
-    (
-      remotePeerId: string,
-      remoteUsername: string,
-      remoteHandle: string,
-      roomId: string,
-      localStream: MediaStream
-    ) => {
-      const existing = peerConnectionsRef.current.get(remotePeerId);
-      if (existing) {
-        return existing;
-      }
+      if (!active || error || !Array.isArray(data)) return;
 
-      const pc = new RTCPeerConnection(RTC_CONFIG);
-      peerConnectionsRef.current.set(remotePeerId, pc);
-
-      for (const track of localStream.getAudioTracks()) {
-        pc.addTrack(track, localStream);
-      }
-
-      pc.ontrack = (event) => {
-        const remoteStream = event.streams[0];
-        if (remoteStream) {
-          attachRemoteAudioStream(
-            remotePeerId,
-            remoteUsername,
-            remoteHandle,
-            remoteStream
-          );
+      const cloudPosts = (data as CloudPostRecord[]).map(fromCloudPostRow);
+      setPosts((prev) => {
+        const byId = new Map<string, PostItem>();
+        for (const cp of cloudPosts) {
+          byId.set(cp.id, cp);
         }
-      };
-
-      pc.onicecandidate = (event) => {
-        const user = currentUserRef.current;
-        if (event.candidate && broadcastRef.current && user) {
-          const pkt: VoiceSignalPacket = {
-            type: "ice",
-            peerId: getLocalPeerId(),
-            targetPeerId: remotePeerId,
-            roomId,
-            username: user.username,
-            handle: user.handle || "@user",
-            candidate: event.candidate.toJSON(),
-          };
-          broadcastRef.current.postMessage(pkt);
-        }
-      };
-
-      pc.onconnectionstatechange = () => {
-        if (
-          pc.connectionState === "disconnected" ||
-          pc.connectionState === "failed" ||
-          pc.connectionState === "closed"
-        ) {
-          pc.close();
-          peerConnectionsRef.current.delete(remotePeerId);
-          const audioEl = remoteAudioMapRef.current.get(remotePeerId);
-          if (audioEl) {
-            audioEl.srcObject = null;
-            audioEl.remove();
-            remoteAudioMapRef.current.delete(remotePeerId);
+        for (const lp of prev) {
+          if (!byId.has(lp.id)) {
+            byId.set(lp.id, lp);
           }
-          setRemotePeers((prev) => {
-            const copy = { ...prev };
-            delete copy[remotePeerId];
-            return copy;
-          });
         }
-      };
+        return Array.from(byId.values());
+      });
+    }
 
-      return pc;
-    },
-    [attachRemoteAudioStream, getLocalPeerId]
-  );
+    loadCloudPosts();
 
-  const startVoiceLevelMeter = useCallback(
-    (stream: MediaStream, monitorSelf: boolean) => {
-      const AudioContextCtor =
-        window.AudioContext ||
-        (window as unknown as { webkitAudioContext?: typeof AudioContext })
-          .webkitAudioContext;
-      if (!AudioContextCtor) return;
-
-      const ctx = new AudioContextCtor();
-      audioCtxRef.current = ctx;
-      if (ctx.state === "suspended") {
-        ctx.resume().catch(() => {});
-      }
-
-      const source = ctx.createMediaStreamSource(stream);
-      const analyser = ctx.createAnalyser();
-      analyser.fftSize = 256;
-      analyser.smoothingTimeConstant = 0.72;
-      source.connect(analyser);
-
-      if (monitorSelf) {
-        source.connect(ctx.destination);
-      }
-
-      analyserRef.current = analyser;
-      const dataArray = new Uint8Array(analyser.frequencyBinCount);
-
-      const tick = () => {
-        if (!analyserRef.current) return;
-        analyserRef.current.getByteTimeDomainData(dataArray);
-        let sumSq = 0;
-        for (let i = 0; i < dataArray.length; i++) {
-          const norm = (dataArray[i] - 128) / 128;
-          sumSq += norm * norm;
+    const channel = supabase
+      .channel("aura-space-public-posts")
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "posts" },
+        () => {
+          loadCloudPosts();
         }
-        const rms = Math.sqrt(sumSq / dataArray.length);
-        const pct = Math.min(100, Math.round(rms * 320));
-        setVoiceLevel(pct);
-        rafLevelRef.current = window.requestAnimationFrame(tick);
-      };
+      )
+      .subscribe();
 
-      rafLevelRef.current = window.requestAnimationFrame(tick);
-    },
-    []
-  );
+    return () => {
+      active = false;
+      supabase.removeChannel(channel).catch(() => {});
+    };
+  }, [hydrated]);
 
-  async function handleJoinVoiceChannel(targetRoomId: string) {
-    if (!currentUser) return;
-    setVoiceError(null);
-    setVoiceStatus(null);
-
+  useEffect(() => {
     if (
-      !navigator.mediaDevices ||
-      typeof navigator.mediaDevices.getUserMedia !== "function"
+      typeof window === "undefined" ||
+      typeof window.BroadcastChannel !== "function"
     ) {
-      setVoiceError(
-        "Браузер не поддерживает getUserMedia или страница открыта не по HTTPS / localhost."
-      );
       return;
     }
 
-    cleanupVoiceSession(true);
-    const myPeerId = getLocalPeerId();
+    const bc = new BroadcastChannel(SYNC_CHANNEL_NAME);
+    syncChannelRef.current = bc;
 
-    try {
-      const stream = await navigator.mediaDevices.getUserMedia({
-        audio: {
-          echoCancellation: true,
-          noiseSuppression: true,
-          autoGainControl: true,
-        },
-        video: false,
-      });
-
-      for (const track of stream.getAudioTracks()) {
-        track.enabled = micEnabled;
-      }
-
-      localStreamRef.current = stream;
-      voiceRoomIdRef.current = targetRoomId;
-      setVoiceRoomId(targetRoomId);
-      setCallSeconds(0);
-      setInVoiceCall(true);
-      setVoiceStatus(
-        "Микрофон активен. Можно говорить в этой вкладке или открыть вторую вкладку Aura Space для теста звонка."
-      );
-      startVoiceLevelMeter(stream, selfMonitor);
-
-      if (typeof window.BroadcastChannel === "function") {
-        const bc = new BroadcastChannel(VOICE_CHANNEL_NAME);
-        broadcastRef.current = bc;
-
-        bc.onmessage = async (event: MessageEvent<VoiceSignalPacket>) => {
-          const pkt = event.data;
-          const activeUser = currentUserRef.current;
-          if (!activeUser || !pkt || pkt.peerId === myPeerId) {
-            return;
-          }
-          if (pkt.roomId !== targetRoomId) return;
-          if (pkt.targetPeerId && pkt.targetPeerId !== myPeerId) {
-            return;
-          }
-
-          if (pkt.type === "join") {
-            setRemotePeers((prev) => ({
-              ...prev,
-              [pkt.peerId]: {
-                peerId: pkt.peerId,
-                username: pkt.username,
-                handle: pkt.handle,
-              },
-            }));
-
-            const pc = createPeerConnectionFor(
-              pkt.peerId,
-              pkt.username,
-              pkt.handle,
-              targetRoomId,
-              stream
-            );
-            const offer = await pc.createOffer();
-            await pc.setLocalDescription(offer);
-            const offerPkt: VoiceSignalPacket = {
-              type: "offer",
-              peerId: myPeerId,
-              targetPeerId: pkt.peerId,
-              roomId: targetRoomId,
-              username: activeUser.username,
-              handle: activeUser.handle || "@user",
-              sdp: pc.localDescription ?? offer,
-            };
-            bc.postMessage(offerPkt);
-          } else if (pkt.type === "offer" && pkt.sdp) {
-            const pc = createPeerConnectionFor(
-              pkt.peerId,
-              pkt.username,
-              pkt.handle,
-              targetRoomId,
-              stream
-            );
-            await pc.setRemoteDescription(new RTCSessionDescription(pkt.sdp));
-            const answer = await pc.createAnswer();
-            await pc.setLocalDescription(answer);
-            const ansPkt: VoiceSignalPacket = {
-              type: "answer",
-              peerId: myPeerId,
-              targetPeerId: pkt.peerId,
-              roomId: targetRoomId,
-              username: activeUser.username,
-              handle: activeUser.handle || "@user",
-              sdp: pc.localDescription ?? answer,
-            };
-            bc.postMessage(ansPkt);
-          } else if (pkt.type === "answer" && pkt.sdp) {
-            const pc = peerConnectionsRef.current.get(pkt.peerId);
-            if (pc && pc.signalingState === "have-local-offer") {
-              await pc.setRemoteDescription(new RTCSessionDescription(pkt.sdp));
-            }
-          } else if (pkt.type === "ice" && pkt.candidate) {
-            const pc = peerConnectionsRef.current.get(pkt.peerId);
-            if (pc && pc.remoteDescription) {
-              try {
-                await pc.addIceCandidate(new RTCIceCandidate(pkt.candidate));
-              } catch {
-                // Игнорируем дубликаты ICE-кандидатов
-              }
-            }
-          } else if (pkt.type === "leave") {
-            const pc = peerConnectionsRef.current.get(pkt.peerId);
-            if (pc) {
-              pc.close();
-              peerConnectionsRef.current.delete(pkt.peerId);
-            }
-            const audioEl = remoteAudioMapRef.current.get(pkt.peerId);
-            if (audioEl) {
-              audioEl.srcObject = null;
-              audioEl.remove();
-              remoteAudioMapRef.current.delete(pkt.peerId);
-            }
-            setRemotePeers((prev) => {
-              const copy = { ...prev };
-              delete copy[pkt.peerId];
-              return copy;
-            });
-          }
-        };
-
-        const joinPkt: VoiceSignalPacket = {
-          type: "join",
-          peerId: myPeerId,
-          roomId: targetRoomId,
-          username: currentUser.username,
-          handle: currentUser.handle || "@user",
-        };
-        bc.postMessage(joinPkt);
-      }
-    } catch (err) {
-      const name =
-        err && typeof err === "object" && "name" in err
-          ? String((err as { name?: string }).name)
-          : "";
-      if (name === "NotAllowedError" || name === "PermissionDeniedError") {
-        setVoiceError(
-          "Доступ к микрофону отклонён. Разреши микрофон в настройках браузера и попробуй снова."
-        );
-      } else if (name === "NotFoundError") {
-        setVoiceError("Микрофон не найден на устройстве.");
-      } else {
-        setVoiceError(
-          "Не удалось включить микрофон. Проверь подключение устройства и права браузера."
-        );
-      }
-      cleanupVoiceSession(false);
-    }
-  }
-
-  async function handleToggleSelfMonitor() {
-    const next = !selfMonitor;
-    setSelfMonitor(next);
-    if (inVoiceCall && localStreamRef.current) {
-      if (rafLevelRef.current !== null) {
-        window.cancelAnimationFrame(rafLevelRef.current);
-        rafLevelRef.current = null;
-      }
-      analyserRef.current = null;
-      if (audioCtxRef.current) {
-        await audioCtxRef.current.close().catch(() => {});
-        audioCtxRef.current = null;
-      }
-      startVoiceLevelMeter(localStreamRef.current, next);
-    }
-  }
-
-  async function handleGenerateManualInvite() {
-    if (!localStreamRef.current || !currentUser) return;
-    setVoiceError(null);
-    if (manualPcRef.current) {
-      manualPcRef.current.close();
-      manualPcRef.current = null;
-    }
-
-    const pc = new RTCPeerConnection(RTC_CONFIG);
-    manualPcRef.current = pc;
-
-    for (const track of localStreamRef.current.getAudioTracks()) {
-      pc.addTrack(track, localStreamRef.current);
-    }
-
-    pc.ontrack = (event) => {
-      const stream = event.streams[0];
-      if (stream) {
-        attachRemoteAudioStream(
-          "manual-peer",
-          "Собеседник",
-          "@remote",
-          stream
-        );
+    bc.onmessage = (
+      event: MessageEvent<{
+        type?: "posts" | "messages" | "rooms";
+        payload?: unknown;
+      }>
+    ) => {
+      const msg = event.data;
+      if (!msg?.type) return;
+      remoteSyncLockRef.current = true;
+      try {
+        if (msg.type === "posts" && Array.isArray(msg.payload)) {
+          setPosts(msg.payload as PostItem[]);
+        } else if (msg.type === "messages" && Array.isArray(msg.payload)) {
+          setMessages(msg.payload as ChatMessage[]);
+        } else if (msg.type === "rooms" && Array.isArray(msg.payload)) {
+          setRooms(msg.payload as RoomItem[]);
+        }
+      } finally {
+        window.setTimeout(() => {
+          remoteSyncLockRef.current = false;
+        }, 0);
       }
     };
 
-    const offer = await pc.createOffer();
-    await pc.setLocalDescription(offer);
+    return () => {
+      bc.close();
+      syncChannelRef.current = null;
+    };
+  }, []);
 
-    await new Promise<void>((resolve) => {
-      if (pc.iceGatheringState === "complete") {
-        resolve();
-        return;
-      }
-      const onState = () => {
-        if (pc.iceGatheringState === "complete") {
-          pc.removeEventListener("icegatheringstatechange", onState);
-          resolve();
-        }
-      };
-      pc.addEventListener("icegatheringstatechange", onState);
-      window.setTimeout(resolve, 1200);
-    });
-
-    setManualOfferText(JSON.stringify(pc.localDescription));
-    setCopiedOffer(false);
-  }
-
-  async function handleApplyManualAnswer() {
-    if (!manualPcRef.current || !manualAnswerInput.trim()) return;
-    setVoiceError(null);
-    try {
-      const parsed = JSON.parse(
-        manualAnswerInput.trim()
-      ) as RTCSessionDescriptionInit;
-      await manualPcRef.current.setRemoteDescription(
-        new RTCSessionDescription(parsed)
-      );
-      setVoiceStatus("Соединение с собеседником установлено.");
-    } catch {
-      setVoiceError("Некорректный SDP-ответ. Вставь JSON-ответ собеседника.");
-    }
-  }
-
-  function handleCopyOfferText() {
-    if (!manualOfferText) return;
-    navigator.clipboard?.writeText(manualOfferText).catch(() => {});
-    setCopiedOffer(true);
-    window.setTimeout(() => setCopiedOffer(false), 1800);
-  }
+  const currentUser = useMemo(
+    () => accounts.find((a) => a.id === currentUserId) || null,
+    [accounts, currentUserId]
+  );
 
   const accountByHandle = useMemo(() => {
     const map = new Map<string, UserAccount>();
     for (const acc of accounts) {
-      const key = safeLower(acc?.handle);
-      if (key) {
-        map.set(key, acc);
-      }
+      map.set(safeLower(acc.handle), acc);
     }
     return map;
   }, [accounts]);
 
-  const knownHandlesSet = useMemo(() => {
-    const set = new Set<string>(["@system_404"]);
+  const knownCommunityHandles = useMemo(() => {
+    const set = new Set<string>();
     for (const acc of accounts) {
-      const key = safeLower(acc?.handle);
-      if (key) set.add(key);
+      set.add(safeLower(acc.handle));
     }
     for (const p of posts) {
-      const key = safeLower(p?.handle);
-      if (key) set.add(key);
+      if (p.handle) set.add(safeLower(p.handle));
+      for (const c of p.comments || []) {
+        if (c.handle) set.add(safeLower(c.handle));
+      }
+    }
+    for (const m of messages) {
+      if (m.handle) set.add(safeLower(m.handle));
     }
     return set;
-  }, [accounts, posts]);
+  }, [accounts, posts, messages]);
 
   const inspectedAccount = useMemo(() => {
-    const target = safeLower(inspectedHandle);
-    if (!target) return null;
-    return accounts.find((u) => safeLower(u?.handle) === target) ?? null;
-  }, [accounts, inspectedHandle]);
+    if (!inspectedHandle) return null;
+    return accountByHandle.get(safeLower(inspectedHandle)) || null;
+  }, [inspectedHandle, accountByHandle]);
 
   const inspectedPosts = useMemo(() => {
-    const targetHandle = safeLower(
-      inspectedAccount?.handle ?? currentUser?.handle
-    );
-    if (!targetHandle) return [];
-    return posts.filter((p) => safeLower(p?.handle) === targetHandle);
-  }, [posts, inspectedAccount, currentUser]);
+    if (!inspectedHandle) return [];
+    const target = safeLower(inspectedHandle);
+    return posts.filter((p) => safeLower(p.handle) === target);
+  }, [inspectedHandle, posts]);
 
-  const inspectedMessagesCount = useMemo(() => {
-    const targetHandle = safeLower(
-      inspectedAccount?.handle ?? currentUser?.handle
-    );
-    if (!targetHandle) return 0;
-    return messages.filter((m) => safeLower(m?.handle) === targetHandle).length;
-  }, [messages, inspectedAccount, currentUser]);
+  useEffect(() => {
+    if (!currentUser) return;
+    setProfileUsername(currentUser.username);
+    setProfilePresence(currentUser.presence || "online");
+    setProfileMood(currentUser.mood || "");
+    setProfileBio(currentUser.bio || "");
+    setProfileAvatar(currentUser.avatar || null);
+    setProfileBanner(currentUser.banner || BANNER_PRESETS[0].gradient);
+    setProfileNewPassword("");
+    setProfileError(null);
+    setProfileSaved(false);
+  }, [currentUser]);
 
-  const saturnState: SaturnState = currentUser?.saturnState ?? 1;
+  const setSaturnState = useCallback(
+    (nextState: SaturnState) => {
+      if (!currentUserId) return;
+      setAccounts((prev) =>
+        prev.map((acc) =>
+          acc.id === currentUserId ? { ...acc, saturnState: nextState } : acc
+        )
+      );
+    },
+    [currentUserId]
+  );
 
   const activeRoom = useMemo(
-    () => rooms.find((r) => r.id === activeRoomId) ?? rooms[0] ?? DEFAULT_ROOMS[0],
+    () => rooms.find((r) => r.id === activeRoomId) || rooms[0] || DEFAULT_ROOMS[0],
     [rooms, activeRoomId]
   );
 
-  const voiceRoom = useMemo(
-    () => rooms.find((r) => r.id === voiceRoomId) ?? activeRoom,
-    [rooms, voiceRoomId, activeRoom]
-  );
-
   const roomPosts = useMemo(() => {
-    const filtered = posts.filter((p) => p.roomId === activeRoom.id);
-    const pinned = filtered.filter((p) => p.pinned);
-    const regular = filtered.filter((p) => !p.pinned);
-    return [...pinned, ...regular];
+    const list = posts.filter((p) => p.roomId === activeRoom.id);
+    return [...list].sort((a, b) => Number(Boolean(b.pinned)) - Number(Boolean(a.pinned)));
   }, [posts, activeRoom.id]);
+
+  const pinnedPost = useMemo(
+    () => roomPosts.find((p) => Boolean(p.pinned)) || null,
+    [roomPosts]
+  );
 
   const roomMessages = useMemo(
     () => messages.filter((m) => m.roomId === activeRoom.id),
     [messages, activeRoom.id]
   );
 
-  const pinnedRoomMessage = useMemo(
-    () => roomMessages.find((m) => m.pinned) ?? null,
+  const pinnedMessage = useMemo(
+    () => roomMessages.find((m) => Boolean(m.pinned)) || null,
     [roomMessages]
   );
 
-  function openUserProfile(handle: string) {
-    setInspectedHandle(handle || null);
-    setActiveTab("profile");
-  }
-
-  function touchCurrentUserActivity() {
-    if (!currentUserId) return;
-    const label = nowTimeLabel();
-    setAccounts((prev) =>
-      prev.map((acc) =>
-        acc.id === currentUserId ? { ...acc, lastActive: label } : acc
-      )
+  const friendsList = useMemo(() => {
+    if (!currentUser) return [];
+    const friendSet = new Set(
+      (currentUser.friends || []).map((h) => safeLower(h))
     );
-  }
+    return accounts.filter((a) => friendSet.has(safeLower(a.handle)));
+  }, [currentUser, accounts]);
 
-  function switchActiveAccount(accountId: string) {
-    const target = accounts.find((a) => a.id === accountId);
-    if (!target) return;
-    if (target.accountType === "official" && target.id !== currentUserId) {
-      return;
+  const suggestedAccounts = useMemo(() => {
+    if (!currentUser) return [];
+    const friendSet = new Set(
+      (currentUser.friends || []).map((h) => safeLower(h))
+    );
+    return accounts.filter(
+      (a) =>
+        a.id !== currentUser.id && !friendSet.has(safeLower(a.handle))
+    );
+  }, [currentUser, accounts]);
+
+  const otherAccounts = useMemo(() => {
+    if (!currentUser) return [];
+    return accounts.filter((a) => a.id !== currentUser.id);
+  }, [accounts, currentUser]);
+
+  useEffect(() => {
+    if (activeTab === "chat") {
+      chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
     }
-    setCurrentUserId(target.id);
-    setAccounts((prev) =>
-      prev.map((acc) =>
-        acc.id === target.id ? { ...acc, lastActive: nowTimeLabel() } : acc
-      )
-    );
-    setInspectedHandle(null);
-    setProfileSaved(false);
-    setProfileError(null);
-    try {
-      if (target.email) {
-        window.localStorage.setItem(LAST_LOGIN_KEY, target.email);
+  }, [roomMessages.length, activeTab, activeRoom.id]);
+
+  const cleanupVoice = useCallback((sendLeaveSignal: boolean) => {
+    if (meterRafRef.current !== null) {
+      cancelAnimationFrame(meterRafRef.current);
+      meterRafRef.current = null;
+    }
+
+    if (sendLeaveSignal && voiceChannelRef.current && inCallRef.current) {
+      const leavePacket: VoiceSignalPacket = {
+        type: "leave",
+        peerId: peerIdRef.current,
+        roomId: activeRoomIdRef.current,
+        username: "",
+        handle: "",
+      };
+      voiceChannelRef.current.postMessage(leavePacket);
+    }
+
+    peerConnectionsRef.current.forEach((pc) => {
+      try {
+        pc.close();
+      } catch {
+        // ignore close error
       }
-    } catch {
-      // Игнорируем ошибки записи
-    }
-  }
-
-  function updateCurrentUserSaturn(updater: (prev: SaturnState) => SaturnState) {
-    if (!currentUserId) return;
-    const label = nowTimeLabel();
-    setAccounts((prev) =>
-      prev.map((acc) =>
-        acc.id === currentUserId
-          ? {
-              ...acc,
-              saturnState: updater(acc.saturnState ?? 1),
-              lastActive: label,
-            }
-          : acc
-      )
-    );
-  }
-
-  function bumpStreakOnActivity() {
-    updateCurrentUserSaturn((prev) => {
-      if (prev === "blackhole" || prev === "slow1") return 1;
-      return prev + 1;
     });
-  }
+    peerConnectionsRef.current.clear();
 
-  function handleRevive() {
-    updateCurrentUserSaturn(() => 1);
-  }
+    remoteAudioElsRef.current.forEach((audioEl) => {
+      try {
+        audioEl.srcObject = null;
+        audioEl.remove();
+      } catch {
+        // ignore cleanup error
+      }
+    });
+    remoteAudioElsRef.current.clear();
 
-  function handleAvatarFileChange(e: React.ChangeEvent<HTMLInputElement>) {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    setProfileError(null);
-    setProfileSaved(false);
+    if (localStreamRef.current) {
+      localStreamRef.current.getTracks().forEach((track) => track.stop());
+      localStreamRef.current = null;
+    }
 
-    if (!file.type.startsWith("image/")) {
-      setProfileError("Выбери файл изображения (PNG, JPG, GIF, WEBP).");
+    if (audioContextRef.current) {
+      audioContextRef.current.close().catch(() => {});
+      audioContextRef.current = null;
+    }
+    analyserRef.current = null;
+
+    inCallRef.current = false;
+    setInCall(false);
+    setCallSeconds(0);
+    setVoiceLevel(0);
+    setRemotePeers([]);
+  }, []);
+
+  const createPeerConnection = useCallback(
+    (targetPeerId: string, targetUsername: string, targetHandle: string) => {
+      const existing = peerConnectionsRef.current.get(targetPeerId);
+      if (existing) return existing;
+
+      const pc = new RTCPeerConnection(RTC_CONFIG);
+
+      if (localStreamRef.current) {
+        localStreamRef.current.getTracks().forEach((track) => {
+          pc.addTrack(track, localStreamRef.current!);
+        });
+      }
+
+      pc.onicecandidate = (event) => {
+        if (event.candidate && voiceChannelRef.current) {
+          const pkt: VoiceSignalPacket = {
+            type: "ice",
+            peerId: peerIdRef.current,
+            targetPeerId,
+            roomId: activeRoomIdRef.current,
+            username: currentUser?.username || "Участник",
+            handle: currentUser?.handle || "@user",
+            candidate: event.candidate.toJSON(),
+          };
+          voiceChannelRef.current.postMessage(pkt);
+        }
+      };
+
+      pc.ontrack = (event) => {
+        const stream = event.streams[0];
+        if (!stream) return;
+        let audioEl = remoteAudioElsRef.current.get(targetPeerId);
+        if (!audioEl) {
+          audioEl = document.createElement("audio");
+          audioEl.autoplay = true;
+          audioEl.playsInline = true;
+          audioEl.muted = deafenedRef.current;
+          document.body.appendChild(audioEl);
+          remoteAudioElsRef.current.set(targetPeerId, audioEl);
+        }
+        audioEl.srcObject = stream;
+        audioEl.play().catch(() => {});
+      };
+
+      pc.onconnectionstatechange = () => {
+        if (
+          pc.connectionState === "failed" ||
+          pc.connectionState === "closed" ||
+          pc.connectionState === "disconnected"
+        ) {
+          pc.close();
+          peerConnectionsRef.current.delete(targetPeerId);
+          const audioEl = remoteAudioElsRef.current.get(targetPeerId);
+          if (audioEl) {
+            audioEl.srcObject = null;
+            audioEl.remove();
+            remoteAudioElsRef.current.delete(targetPeerId);
+          }
+          setRemotePeers((prev) =>
+            prev.filter((p) => p.peerId !== targetPeerId)
+          );
+        }
+      };
+
+      peerConnectionsRef.current.set(targetPeerId, pc);
+      setRemotePeers((prev) => {
+        if (prev.some((p) => p.peerId === targetPeerId)) return prev;
+        return [
+          ...prev,
+          {
+            peerId: targetPeerId,
+            username: targetUsername || "Участник",
+            handle: targetHandle || "@user",
+          },
+        ];
+      });
+
+      return pc;
+    },
+    [currentUser]
+  );
+
+  useEffect(() => {
+    if (
+      typeof window === "undefined" ||
+      typeof window.BroadcastChannel !== "function"
+    ) {
       return;
     }
 
-    if (file.size > 1_500_000) {
-      setProfileError("Картинка должна быть легче 1.5 МБ.");
-      return;
-    }
+    const bc = new BroadcastChannel(VOICE_CHANNEL_NAME);
+    voiceChannelRef.current = bc;
 
-    const reader = new FileReader();
-    reader.onload = () => {
-      if (typeof reader.result === "string") {
-        setProfileAvatar(reader.result);
+    bc.onmessage = async (event: MessageEvent<VoiceSignalPacket>) => {
+      const msg = event.data;
+      if (!msg || msg.peerId === peerIdRef.current) return;
+      if (!inCallRef.current || msg.roomId !== activeRoomIdRef.current) return;
+      if (msg.targetPeerId && msg.targetPeerId !== peerIdRef.current) return;
+
+      if (msg.type === "join") {
+        const pc = createPeerConnection(msg.peerId, msg.username, msg.handle);
+        try {
+          const offer = await pc.createOffer();
+          await pc.setLocalDescription(offer);
+          const answerOfferPacket: VoiceSignalPacket = {
+            type: "offer",
+            peerId: peerIdRef.current,
+            targetPeerId: msg.peerId,
+            roomId: activeRoomIdRef.current,
+            username: currentUser?.username || "Участник",
+            handle: currentUser?.handle || "@user",
+            sdp: pc.localDescription || offer,
+          };
+          bc.postMessage(answerOfferPacket);
+        } catch {
+          // ignore signaling error
+        }
+      } else if (msg.type === "offer" && msg.sdp) {
+        const pc = createPeerConnection(msg.peerId, msg.username, msg.handle);
+        try {
+          await pc.setRemoteDescription(new RTCSessionDescription(msg.sdp));
+          const answer = await pc.createAnswer();
+          await pc.setLocalDescription(answer);
+          const answerPacket: VoiceSignalPacket = {
+            type: "answer",
+            peerId: peerIdRef.current,
+            targetPeerId: msg.peerId,
+            roomId: activeRoomIdRef.current,
+            username: currentUser?.username || "Участник",
+            handle: currentUser?.handle || "@user",
+            sdp: pc.localDescription || answer,
+          };
+          bc.postMessage(answerPacket);
+        } catch {
+          // ignore signaling error
+        }
+      } else if (msg.type === "answer" && msg.sdp) {
+        const pc = peerConnectionsRef.current.get(msg.peerId);
+        if (pc) {
+          try {
+            await pc.setRemoteDescription(new RTCSessionDescription(msg.sdp));
+          } catch {
+            // ignore signaling error
+          }
+        }
+      } else if (msg.type === "ice" && msg.candidate) {
+        const pc = peerConnectionsRef.current.get(msg.peerId);
+        if (pc) {
+          try {
+            await pc.addIceCandidate(new RTCIceCandidate(msg.candidate));
+          } catch {
+            // ignore ice error
+          }
+        }
+      } else if (msg.type === "leave") {
+        const pc = peerConnectionsRef.current.get(msg.peerId);
+        if (pc) {
+          pc.close();
+          peerConnectionsRef.current.delete(msg.peerId);
+        }
+        const audioEl = remoteAudioElsRef.current.get(msg.peerId);
+        if (audioEl) {
+          audioEl.srcObject = null;
+          audioEl.remove();
+          remoteAudioElsRef.current.delete(msg.peerId);
+        }
+        setRemotePeers((prev) => prev.filter((p) => p.peerId !== msg.peerId));
       }
     };
-    reader.readAsDataURL(file);
-  }
 
-  function handleBannerFileChange(e: React.ChangeEvent<HTMLInputElement>) {
-    const file = e.target.files?.[0];
-    e.target.value = "";
-    if (!file) return;
-    setProfileError(null);
-    setProfileSaved(false);
-
-    if (!file.type.startsWith("image/")) {
-      setProfileError("Выбери файл изображения для баннера (PNG, JPG, WEBP).");
-      return;
-    }
-
-    if (file.size > MAX_BANNER_IMAGE_BYTES) {
-      setProfileError("Обложка профиля должна быть легче 2 МБ.");
-      return;
-    }
-
-    const reader = new FileReader();
-    reader.onload = () => {
-      if (typeof reader.result === "string") {
-        setProfileBanner(reader.result);
-      }
+    return () => {
+      cleanupVoice(false);
+      bc.close();
+      voiceChannelRef.current = null;
     };
-    reader.readAsDataURL(file);
-  }
+  }, [cleanupVoice, createPeerConnection, currentUser]);
 
-  function handlePostImageFileChange(e: React.ChangeEvent<HTMLInputElement>) {
-    const file = e.target.files?.[0];
-    e.target.value = "";
-    if (!file) return;
-    setPostError(null);
+  useEffect(() => {
+    if (!inCall) return;
+    const timer = window.setInterval(() => {
+      setCallSeconds((prev) => prev + 1);
+    }, 1000);
+    return () => window.clearInterval(timer);
+  }, [inCall]);
 
-    if (!file.type.startsWith("image/")) {
-      setPostError("Выбери файл фотографии или изображения (PNG, JPG, GIF, WEBP).");
-      return;
+  const startVoiceMeter = useCallback((stream: MediaStream) => {
+    try {
+      const AudioCtx =
+        window.AudioContext ||
+        (window as unknown as { webkitAudioContext: typeof AudioContext })
+          .webkitAudioContext;
+      if (!AudioCtx) return;
+      const ctx = new AudioCtx();
+      const source = ctx.createMediaStreamSource(stream);
+      const analyser = ctx.createAnalyser();
+      analyser.fftSize = 256;
+      source.connect(analyser);
+
+      audioContextRef.current = ctx;
+      analyserRef.current = analyser;
+
+      const dataArray = new Uint8Array(analyser.frequencyBinCount);
+      const tick = () => {
+        if (!analyserRef.current || !inCallRef.current) return;
+        analyserRef.current.getByteFrequencyData(dataArray);
+        if (mutedRef.current) {
+          setVoiceLevel(0);
+        } else {
+          let sum = 0;
+          for (let i = 0; i < dataArray.length; i++) {
+            sum += dataArray[i];
+          }
+          const avg = sum / dataArray.length;
+          setVoiceLevel(Math.min(100, Math.round((avg / 140) * 100)));
+        }
+        meterRafRef.current = requestAnimationFrame(tick);
+      };
+      meterRafRef.current = requestAnimationFrame(tick);
+    } catch {
+      // ignore audio meter errors
     }
+  }, []);
 
-    if (file.size > MAX_POST_IMAGE_BYTES) {
-      setPostError("Фотография должна быть легче 2.5 МБ.");
-      return;
-    }
-
-    const reader = new FileReader();
-    reader.onload = () => {
-      if (typeof reader.result === "string") {
-        setPostImage(reader.result);
-        setPostImageUrl("");
-        setShowImageUrlInput(false);
-      }
-    };
-    reader.readAsDataURL(file);
-  }
-
-  function handleApplyPostImageUrl() {
-    setPostError(null);
-    const trimmed = postImageUrl.trim();
-    if (!trimmed) {
-      setPostError("Вставь ссылку на изображение (http://, https:// или data:image/).");
-      return;
-    }
-    const isHttp = /^https?:\/\/\S+/i.test(trimmed);
-    const isDataImg = /^data:image\/[a-zA-Z0-9.+-]+;base64,/i.test(trimmed);
-    if (!isHttp && !isDataImg) {
-      setPostError("Ссылка должна начинаться с http:// или https://.");
-      return;
-    }
-    setPostImage(trimmed);
-    setShowImageUrlInput(false);
-  }
-
-  function handleClearPostImage() {
-    setPostImage(null);
-    setPostImageUrl("");
-    setPostError(null);
-  }
-
-  async function handleSaveProfile(e: React.FormEvent) {
-    e.preventDefault();
+  const handleToggleCall = async () => {
     if (!currentUser) return;
-    setProfileError(null);
-    setProfileSaved(false);
+    setCallStatus(null);
 
-    const nextName = profileUsername.trim();
-    const nextMood = profileMood.trim() || "На орбите";
-    const nextBio = profileBio.trim();
-    const nextPasswordRaw = profileNewPassword.trim();
-
-    if (nextName.length < 2) {
-      setProfileError("Имя должно быть не короче 2 символов.");
+    if (inCall) {
+      cleanupVoice(true);
+      setCallStatus("Ты вышел из голосового канала.");
       return;
     }
 
-    if (nextPasswordRaw && nextPasswordRaw.length < 6) {
-      setProfileError("Новый пароль должен быть не короче 6 символов.");
+    if (
+      typeof navigator === "undefined" ||
+      !navigator.mediaDevices ||
+      typeof navigator.mediaDevices.getUserMedia !== "function"
+    ) {
+      setCallStatus("Браузер не поддерживает доступ к микрофону.");
       return;
     }
 
-    let updatedSalt = currentUser.salt;
-    let updatedPasswordHash = currentUser.passwordHash;
-    if (nextPasswordRaw) {
-      updatedSalt = generateSalt();
-      updatedPasswordHash = await hashPassword(nextPasswordRaw, updatedSalt);
-    }
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({
+        audio: {
+          echoCancellation: true,
+          noiseSuppression: true,
+        },
+        video: false,
+      });
+      stream.getAudioTracks().forEach((track) => {
+        track.enabled = !mutedRef.current;
+      });
+      localStreamRef.current = stream;
+      inCallRef.current = true;
+      setInCall(true);
+      setCallSeconds(0);
+      setSaturnState("celebrate");
+      startVoiceMeter(stream);
 
-    const activeHandleLower = safeLower(currentUser.handle);
-
-    setAccounts((prev) =>
-      prev.map((acc) =>
-        acc.id === currentUser.id
-          ? {
-              ...acc,
-              username: nextName,
-              presence: profilePresence,
-              lastActive: nowTimeLabel(),
-              mood: nextMood,
-              bio: nextBio,
-              avatar: profileAvatar,
-              banner: profileBanner,
-              salt: updatedSalt,
-              passwordHash: updatedPasswordHash,
-            }
-          : acc
-      )
-    );
-
-    setPosts((prev) =>
-      prev.map((post) => {
-        const isPostAuthor =
-          !!activeHandleLower && safeLower(post.handle) === activeHandleLower;
-        return {
-          ...post,
-          author: isPostAuthor ? nextName : post.author,
-          avatar: isPostAuthor ? profileAvatar : post.avatar,
-          comments: (post.comments || []).map((c) =>
-            !!activeHandleLower && safeLower(c.handle) === activeHandleLower
-              ? { ...c, author: nextName, avatar: profileAvatar }
-              : c
-          ),
+      if (voiceChannelRef.current) {
+        const joinPacket: VoiceSignalPacket = {
+          type: "join",
+          peerId: peerIdRef.current,
+          roomId: activeRoom.id,
+          username: currentUser.username,
+          handle: currentUser.handle,
         };
-      })
-    );
+        voiceChannelRef.current.postMessage(joinPacket);
+      }
 
-    setMessages((prev) =>
-      prev.map((msg) =>
-        !!activeHandleLower && safeLower(msg.handle) === activeHandleLower
-          ? { ...msg, author: nextName, avatar: profileAvatar }
-          : msg
-      )
-    );
+      setCallStatus(
+        `Подключён к голосу в #${activeRoom.name} (WebRTC активен).`
+      );
+    } catch {
+      cleanupVoice(false);
+      setCallStatus(
+        "Доступ к микрофону отклонён или недоступен. Разреши микрофон в браузере."
+      );
+    }
+  };
 
-    setProfileNewPassword("");
-    setProfileSaved(true);
-  }
+  const handleSwitchRoom = (roomId: string) => {
+    if (roomId === activeRoomId) return;
+    if (inCallRef.current) {
+      cleanupVoice(true);
+      setCallStatus("Отключён от голоса при смене канала.");
+    }
+    setActiveRoomId(roomId);
+    setEditingPostId(null);
+    setEditingMessageId(null);
+  };
 
-  function handleChangePresenceQuick(nextPresence: PresenceKind) {
-    if (!currentUser) return;
-    setProfilePresence(nextPresence);
-    setAccounts((prev) =>
-      prev.map((acc) =>
-        acc.id === currentUser.id
-          ? { ...acc, presence: nextPresence, lastActive: nowTimeLabel() }
-          : acc
-      )
-    );
-  }
-
-  function handleCreateChannel(e: React.FormEvent) {
+  const handleCreateChannel = (e: React.FormEvent) => {
     e.preventDefault();
     if (!currentUser) return;
     setChannelError(null);
 
     const slug = normalizeChannelSlug(newChannelName);
     if (slug.length < 2) {
-      setChannelError("Название канала должно быть не короче 2 символов.");
+      setChannelError("Название канала — минимум 2 символа (например, music).");
       return;
     }
 
-    const exists = rooms.some(
-      (r) => safeLower(r.name) === slug || r.id === slug
-    );
-    if (exists) {
+    if (rooms.some((r) => safeLower(r.name) === safeLower(slug))) {
       setChannelError(`Канал #${slug} уже существует.`);
       return;
     }
 
-    const id = `room-${slug}-${Date.now()}`;
-    const created: RoomItem = {
+    const id = `${slug}-${Date.now().toString(36)}`;
+    const topic =
+      newChannelTopic.trim() || `Канал сообщества, созданный ${currentUser.handle}`;
+
+    const nextRoom: RoomItem = {
       id,
       name: slug,
-      topic:
-        newChannelTopic.trim() ||
-        `Канал пользователя ${currentUser.username} (${currentUser.handle})`,
+      topic,
       ownerHandle: currentUser.handle,
     };
 
-    setRooms((prev) => [...prev, created]);
+    setRooms((prev) => [...prev, nextRoom]);
     setActiveRoomId(id);
     setNewChannelName("");
     setNewChannelTopic("");
     setShowChannelForm(false);
-    setInspectedHandle(null);
-    if (activeTab === "profile" || activeTab === "friends") {
-      setActiveTab("feed");
-    }
-    bumpStreakOnActivity();
-  }
+    setSaturnState("celebrate");
+  };
 
-  function handleDeleteChannel(roomId: string) {
-    if (DEFAULT_ROOMS.some((d) => d.id === roomId)) return;
-    setRooms((prev) => prev.filter((r) => r.id !== roomId));
-    setPosts((prev) => prev.filter((p) => p.roomId !== roomId));
-    setMessages((prev) => prev.filter((m) => m.roomId !== roomId));
-    if (activeRoomId === roomId) {
-      setActiveRoomId("general");
-    }
-  }
-
-  function handleAddFriendByHandle(rawHandle: string) {
-    if (!currentUser) return;
-    setFriendMessage(null);
-
-    const targetHandle = normalizeHandle(rawHandle);
-    if (targetHandle.length < 3) {
-      setFriendMessage("Введи корректный @handle.");
-      return;
-    }
-
-    const targetLower = safeLower(targetHandle);
-    if (targetLower === currentUserHandleLower) {
-      setFriendMessage("Нельзя добавить самого себя в друзья.");
-      return;
-    }
-
-    const currentFriends = Array.isArray(currentUser.friends)
-      ? currentUser.friends
-      : [];
-    const alreadyFriend = currentFriends.some(
-      (f) => safeLower(f) === targetLower
-    );
-    if (alreadyFriend) {
-      setFriendMessage(`${targetHandle} уже в списке друзей.`);
-      return;
-    }
-
-    setAccounts((prev) =>
-      prev.map((acc) =>
-        acc.id === currentUser.id
-          ? {
-              ...acc,
-              friends: [
-                ...(Array.isArray(acc.friends) ? acc.friends : []),
-                targetHandle,
-              ],
-            }
-          : acc
-      )
-    );
-    setFriendHandleInput("");
-    setFriendMessage(`Добавлено в друзья: ${targetHandle}`);
-  }
-
-  function handleRemoveFriend(targetHandle: string) {
-    if (!currentUser) return;
-    const targetLower = safeLower(targetHandle);
-    setAccounts((prev) =>
-      prev.map((acc) =>
-        acc.id === currentUser.id
-          ? {
-              ...acc,
-              friends: (Array.isArray(acc.friends) ? acc.friends : []).filter(
-                (f) => safeLower(f) !== targetLower
-              ),
-            }
-          : acc
-      )
-    );
-  }
-
-  async function handleCreateExtraAccount(e: React.FormEvent) {
-    e.preventDefault();
-    setAddAccError(null);
-    setAddAccSuggestion(null);
-
-    const cleanName = addAccUsername.trim();
-    const cleanHandle = normalizeHandle(addAccHandle || cleanName);
-    const emailCheck = validateEmailAddress(addAccEmail);
-
-    if (cleanName.length < 2) {
-      setAddAccError("Имя должно быть не короче 2 символов.");
-      return;
-    }
-    if (cleanHandle.length < 3) {
-      setAddAccError(
-        "Укажи корректный @handle (минимум 2 латинских символа или цифр)."
-      );
-      return;
-    }
-    if (isReservedCreatorHandle(cleanHandle)) {
-      setAddAccError(
-        `Хэндл ${cleanHandle} зарезервирован за создателем Aura Space.`
-      );
-      return;
-    }
-    if (!emailCheck.valid) {
-      setAddAccError(emailCheck.error || "Введи корректный email.");
-      if (emailCheck.suggestion) {
-        setAddAccSuggestion(emailCheck.suggestion);
-      }
-      return;
-    }
-    if (addAccPassword.length < 6) {
-      setAddAccError("Пароль должен быть не короче 6 символов.");
-      return;
-    }
-    if (addAccPassword !== addAccPasswordConfirm) {
-      setAddAccError("Пароли не совпадают.");
-      return;
-    }
-
-    const cleanEmail = emailCheck.normalized;
-    const domainPart = cleanEmail.split("@")[1];
-
-    const handleTaken = accounts.some(
-      (a) => safeLower(a?.handle) === safeLower(cleanHandle)
-    );
-    if (handleTaken) {
-      setAddAccError(`Хэндл ${cleanHandle} уже занят.`);
-      return;
-    }
-
-    const emailTaken = accounts.some(
-      (a) => safeLower(a?.email) === cleanEmail
-    );
-    if (emailTaken) {
-      setAddAccError("Аккаунт с таким email уже зарегистрирован.");
-      return;
-    }
-
-    setAddAccSubmitting(true);
-    try {
-      const mxExists = await domainHasMxRecords(domainPart);
-      if (mxExists === false) {
-        setAddAccError(
-          `Домен ${domainPart} не существует или не принимает почту.`
-        );
-        return;
-      }
-
-      const salt = generateSalt();
-      const passwordHash = await hashPassword(addAccPassword, salt);
-      const createdTime = nowTimeLabel();
-
-      const newUser: UserAccount = {
-        id: `usr-${Date.now()}`,
-        username: cleanName,
-        handle: cleanHandle,
-        email: cleanEmail,
-        accountType: "personal",
-        subscribers: 0,
-        bio: "",
-        mood: "На орбите",
-        presence: "online",
-        lastActive: createdTime,
-        avatar: null,
-        banner: BANNER_PRESETS[0].gradient,
-        friends: [],
-        passwordHash,
-        salt,
-        saturnState: 1,
-        createdAt: createdTime,
-      };
-
-      setAccounts((prev) => [...prev, newUser]);
-      setCurrentUserId(newUser.id);
-      setLoginIdentifier(cleanEmail);
-      try {
-        window.localStorage.setItem(LAST_LOGIN_KEY, cleanEmail);
-      } catch {
-        // Игнорируем ошибки записи
-      }
-      setAddAccUsername("");
-      setAddAccHandle("");
-      setAddAccEmail("");
-      setAddAccPassword("");
-      setAddAccPasswordConfirm("");
-      setShowAddAccountModal(false);
-      setInspectedHandle(null);
-    } finally {
-      setAddAccSubmitting(false);
-    }
-  }
-
-  async function handleRegister(e: React.FormEvent) {
+  const handleRegister = async (e: React.FormEvent) => {
     e.preventDefault();
     setAuthError(null);
     setAuthSuggestion(null);
 
-    const cleanName = regUsername.trim();
-    const cleanHandle = normalizeHandle(regHandle || cleanName);
+    const username = regUsername.trim();
+    const handle = normalizeHandle(regHandle || regUsername);
     const emailCheck = validateEmailAddress(regEmail);
 
-    if (cleanName.length < 2) {
+    if (username.length < 2) {
       setAuthError("Имя должно быть не короче 2 символов.");
       return;
     }
-    if (cleanHandle.length < 3) {
+    if (handle.length < 3) {
       setAuthError(
-        "Укажи корректный @handle (минимум 2 латинских символа или цифр)."
+        "Укажи корректный @handle (минимум 2 символа: латиница, цифры, _)."
       );
       return;
     }
-    if (isReservedCreatorHandle(cleanHandle)) {
+    if (isReservedCreatorHandle(handle)) {
       setAuthError(
-        `Хэндл ${cleanHandle} зарезервирован за создателем Aura Space.`
+        `Хэндл ${handle} зарезервирован за создателем Aura Space. Выбери другой @handle.`
       );
       return;
     }
     if (!emailCheck.valid) {
-      setAuthError(emailCheck.error || "Введи корректный email.");
+      setAuthError(emailCheck.error || "Укажи корректный email.");
       if (emailCheck.suggestion) {
         setAuthSuggestion(emailCheck.suggestion);
       }
       return;
     }
-    if (regPassword.length < 6) {
-      setAuthError("Пароль должен быть не короче 6 символов.");
+    if (regPassword.length < 4) {
+      setAuthError("Пароль должен быть не короче 4 символов.");
       return;
     }
     if (regPassword !== regPasswordConfirm) {
@@ -2328,69 +1837,65 @@ export default function HomePage() {
       return;
     }
 
-    const cleanEmail = emailCheck.normalized;
-    const domainPart = cleanEmail.split("@")[1];
-
     const handleTaken = accounts.some(
-      (a) => safeLower(a?.handle) === safeLower(cleanHandle)
+      (a) => safeLower(a.handle) === safeLower(handle)
     );
     if (handleTaken) {
-      setAuthError(`Хэндл ${cleanHandle} уже занят.`);
+      setAuthError(`Хэндл ${handle} уже занят. Выбери другой.`);
       return;
     }
 
     const emailTaken = accounts.some(
-      (a) => safeLower(a?.email) === cleanEmail
+      (a) => safeLower(a.email) === emailCheck.normalized
     );
     if (emailTaken) {
-      setAuthError("Аккаунт с таким email уже зарегистрирован.");
+      setAuthError(
+        "Аккаунт с таким email уже зарегистрирован. Войди в него или укажи другой адрес."
+      );
       return;
     }
 
     setAuthSubmitting(true);
     try {
-      const mxExists = await domainHasMxRecords(domainPart);
-      if (mxExists === false) {
+      const domain = emailCheck.normalized.split("@")[1];
+      const mxResult = await domainHasMxRecords(domain);
+      if (mxResult === false) {
         setAuthError(
-          `Домен ${domainPart} не существует или не принимает почту.`
+          `Почтовый домен ${domain} не принимает входящую почту (MX-записи не найдены).`
         );
         return;
       }
 
       const salt = generateSalt();
       const passwordHash = await hashPassword(regPassword, salt);
-      const createdTime = nowTimeLabel();
 
-      const newUser: UserAccount = {
-        id: `usr-${Date.now()}`,
-        username: cleanName,
-        handle: cleanHandle,
-        email: cleanEmail,
+      const newAcc: UserAccount = {
+        id: `acc-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+        username,
+        handle,
+        email: emailCheck.normalized,
         accountType: "personal",
         subscribers: 0,
-        bio: "",
-        mood: "На орбите",
+        bio: "Новый участник Aura Space.",
+        mood: "Исследует орбиту",
         presence: "online",
-        lastActive: createdTime,
+        lastActive: "в сети",
         avatar: null,
         banner: BANNER_PRESETS[0].gradient,
         friends: [],
         passwordHash,
         salt,
-        saturnState: 1,
-        createdAt: createdTime,
+        saturnState: "celebrate",
+        createdAt: new Date().toLocaleDateString("ru-RU"),
       };
 
-      setAccounts((prev) => [...prev, newUser]);
-      setCurrentUserId(newUser.id);
-      setLoginIdentifier(cleanEmail);
+      setAccounts((prev) => [...prev, newAcc]);
+      setCurrentUserId(newAcc.id);
       try {
-        window.localStorage.setItem(LAST_LOGIN_KEY, cleanEmail);
+        localStorage.setItem(LAST_LOGIN_KEY, newAcc.handle);
       } catch {
-        // Игнорируем ошибки записи
+        // ignore
       }
-      setInspectedHandle(null);
-      setActiveTab("feed");
       setRegUsername("");
       setRegHandle("");
       setRegEmail("");
@@ -2399,329 +1904,649 @@ export default function HomePage() {
     } finally {
       setAuthSubmitting(false);
     }
-  }
+  };
 
-  async function handleLogin(e: React.FormEvent) {
+  const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     setAuthError(null);
     setAuthSuggestion(null);
 
     const rawId = loginIdentifier.trim().toLowerCase();
-    const normalizedIdHandle = normalizeHandle(rawId);
-
-    if (!rawId || !loginPassword) {
-      setAuthError("Введи email, @handle или имя и пароль.");
+    if (!rawId) {
+      setAuthError("Введи @handle, email или имя аккаунта.");
       return;
     }
-
-    const found = accounts.find(
-      (a) =>
-        safeLower(a?.email) === rawId ||
-        safeLower(a?.username).trim() === rawId ||
-        safeLower(a?.handle) === rawId ||
-        (!!normalizedIdHandle &&
-          safeLower(a?.handle) === safeLower(normalizedIdHandle))
-    );
-
-    if (!found) {
-      setAuthError("Аккаунт с такими данными не найден.");
+    if (!loginPassword) {
+      setAuthError("Введи пароль.");
       return;
     }
 
     setAuthSubmitting(true);
     try {
+      const normalizedHandle = normalizeHandle(rawId);
+      const found = accounts.find(
+        (a) =>
+          safeLower(a.handle) === rawId ||
+          (normalizedHandle && safeLower(a.handle) === normalizedHandle) ||
+          safeLower(a.email) === rawId ||
+          safeLower(a.username) === rawId
+      );
+
+      if (!found) {
+        setAuthError(
+          "Аккаунт не найден. Проверь @handle / email или зарегистрируйся."
+        );
+        return;
+      }
+
       const candidateHash = await hashPassword(loginPassword, found.salt);
       if (candidateHash !== found.passwordHash) {
         setAuthError("Неверный пароль.");
         return;
       }
 
-      setCurrentUserId(found.id);
+      const updatedAcc: UserAccount = {
+        ...found,
+        presence: found.presence || "online",
+        lastActive: "в сети",
+        saturnState: "idle",
+      };
+
       setAccounts((prev) =>
-        prev.map((acc) =>
-          acc.id === found.id ? { ...acc, lastActive: nowTimeLabel() } : acc
-        )
+        prev.map((a) => (a.id === found.id ? updatedAcc : a))
       );
-      setLoginIdentifier(found.email || found.handle);
+      setCurrentUserId(found.id);
       try {
-        if (found.email) {
-          window.localStorage.setItem(LAST_LOGIN_KEY, found.email);
-        }
+        localStorage.setItem(LAST_LOGIN_KEY, found.handle);
       } catch {
-        // Игнорируем ошибки записи
+        // ignore
       }
-      setInspectedHandle(null);
-      setActiveTab("feed");
       setLoginPassword("");
     } finally {
       setAuthSubmitting(false);
     }
-  }
+  };
 
-  function handleLogout() {
-    cleanupVoiceSession(true);
-    if (currentUser?.email) {
-      setLoginIdentifier(currentUser.email);
-      try {
-        window.localStorage.setItem(LAST_LOGIN_KEY, currentUser.email);
-      } catch {
-        // Игнорируем ошибки записи
+  const handleQuickSwitchAccount = (targetId: string) => {
+    if (targetId === currentUserId) return;
+    if (inCallRef.current) {
+      cleanupVoice(true);
+    }
+    const target = accounts.find((a) => a.id === targetId);
+    if (!target) return;
+    setCurrentUserId(target.id);
+    setInspectedHandle(null);
+    try {
+      localStorage.setItem(LAST_LOGIN_KEY, target.handle);
+    } catch {
+      // ignore
+    }
+  };
+
+  const handleAddAnotherAccount = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setAddAccError(null);
+    setAddAccSuggestion(null);
+
+    const username = addAccUsername.trim();
+    const handle = normalizeHandle(addAccHandle || addAccUsername);
+    const emailCheck = validateEmailAddress(addAccEmail);
+
+    if (username.length < 2) {
+      setAddAccError("Имя должно быть не короче 2 символов.");
+      return;
+    }
+    if (handle.length < 3) {
+      setAddAccError(
+        "Укажи корректный @handle (минимум 2 символа: латиница, цифры, _)."
+      );
+      return;
+    }
+    if (isReservedCreatorHandle(handle)) {
+      setAddAccError(
+        `Хэндл ${handle} зарезервирован за создателем Aura Space.`
+      );
+      return;
+    }
+    if (!emailCheck.valid) {
+      setAddAccError(emailCheck.error || "Укажи корректный email.");
+      if (emailCheck.suggestion) {
+        setAddAccSuggestion(emailCheck.suggestion);
       }
+      return;
+    }
+    if (addAccPassword.length < 4) {
+      setAddAccError("Пароль должен быть не короче 4 символов.");
+      return;
+    }
+    if (addAccPassword !== addAccPasswordConfirm) {
+      setAddAccError("Пароли не совпадают.");
+      return;
+    }
+
+    if (accounts.some((a) => safeLower(a.handle) === safeLower(handle))) {
+      setAddAccError(`Хэндл ${handle} уже занят.`);
+      return;
+    }
+    if (
+      accounts.some((a) => safeLower(a.email) === emailCheck.normalized)
+    ) {
+      setAddAccError("Этот email уже используется другим аккаунтом.");
+      return;
+    }
+
+    setAddAccSubmitting(true);
+    try {
+      const domain = emailCheck.normalized.split("@")[1];
+      const mxResult = await domainHasMxRecords(domain);
+      if (mxResult === false) {
+        setAddAccError(
+          `Почтовый домен ${domain} не принимает входящую почту (MX-записи не найдены).`
+        );
+        return;
+      }
+
+      if (inCallRef.current) {
+        cleanupVoice(true);
+      }
+
+      const salt = generateSalt();
+      const passwordHash = await hashPassword(addAccPassword, salt);
+
+      const created: UserAccount = {
+        id: `acc-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+        username,
+        handle,
+        email: emailCheck.normalized,
+        accountType: "personal",
+        subscribers: 0,
+        bio: "Дополнительный профиль в Aura Space.",
+        mood: "В сети",
+        presence: "online",
+        lastActive: "в сети",
+        avatar: null,
+        banner: BANNER_PRESETS[1].gradient,
+        friends: [],
+        passwordHash,
+        salt,
+        saturnState: "celebrate",
+        createdAt: new Date().toLocaleDateString("ru-RU"),
+      };
+
+      setAccounts((prev) => [...prev, created]);
+      setCurrentUserId(created.id);
+      try {
+        localStorage.setItem(LAST_LOGIN_KEY, created.handle);
+      } catch {
+        // ignore
+      }
+      setAddAccUsername("");
+      setAddAccHandle("");
+      setAddAccEmail("");
+      setAddAccPassword("");
+      setAddAccPasswordConfirm("");
+      setShowAddAccountModal(false);
+    } finally {
+      setAddAccSubmitting(false);
+    }
+  };
+
+  const handleLogout = () => {
+    if (inCallRef.current) {
+      cleanupVoice(true);
     }
     setCurrentUserId(null);
-    setShowAddAccountModal(false);
-    setAuthMode("login");
     setInspectedHandle(null);
+    setAuthMode("login");
     setAuthError(null);
     setAuthSuggestion(null);
-  }
+  };
 
-  function handleCreatePost(e: React.FormEvent) {
+  const handleAvatarUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    if (!file.type.startsWith("image/")) {
+      setProfileError("Выбери файл изображения (PNG, JPG, WEBP).");
+      return;
+    }
+    if (file.size > MAX_POST_IMAGE_BYTES) {
+      setProfileError("Файл аватарки слишком большой (максимум 2.5 МБ).");
+      return;
+    }
+    const reader = new FileReader();
+    reader.onload = () => {
+      if (typeof reader.result === "string") {
+        setProfileAvatar(reader.result);
+        setProfileError(null);
+        setProfileSaved(false);
+      }
+    };
+    reader.readAsDataURL(file);
+  };
+
+  const handleBannerUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    if (!file.type.startsWith("image/")) {
+      setProfileError("Для шапки профиля выбери изображение (PNG, JPG, WEBP).");
+      return;
+    }
+    if (file.size > MAX_BANNER_IMAGE_BYTES) {
+      setProfileError("Файл шапки слишком большой (максимум 2 МБ).");
+      return;
+    }
+    const reader = new FileReader();
+    reader.onload = () => {
+      if (typeof reader.result === "string") {
+        setProfileBanner(reader.result);
+        setProfileError(null);
+        setProfileSaved(false);
+      }
+    };
+    reader.readAsDataURL(file);
+  };
+
+  const handlePostImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    if (!file.type.startsWith("image/")) {
+      setPostError("К посту можно прикрепить только изображение.");
+      return;
+    }
+    if (file.size > MAX_POST_IMAGE_BYTES) {
+      setPostError("Изображение не должно превышать 2.5 МБ.");
+      return;
+    }
+    const reader = new FileReader();
+    reader.onload = () => {
+      if (typeof reader.result === "string") {
+        setPostImage(reader.result);
+        setPostError(null);
+      }
+    };
+    reader.readAsDataURL(file);
+  };
+
+  const handleSaveProfile = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!currentUser) return;
+    setProfileError(null);
+    setProfileSaved(false);
+
+    const nextName = profileUsername.trim();
+    if (nextName.length < 2) {
+      setProfileError("Имя должно быть не короче 2 символов.");
+      return;
+    }
+
+    let nextPasswordHash = currentUser.passwordHash;
+    let nextSalt = currentUser.salt;
+    if (profileNewPassword.trim().length > 0) {
+      if (profileNewPassword.trim().length < 4) {
+        setProfileError("Новый пароль должен быть не короче 4 символов.");
+        return;
+      }
+      nextSalt = generateSalt();
+      nextPasswordHash = await hashPassword(
+        profileNewPassword.trim(),
+        nextSalt
+      );
+    }
+
+    const updatedUser: UserAccount = {
+      ...currentUser,
+      username: nextName,
+      presence: profilePresence,
+      mood: profileMood.trim() || "В сети",
+      bio: profileBio.trim(),
+      avatar: profileAvatar,
+      banner: profileBanner || BANNER_PRESETS[0].gradient,
+      lastActive: "в сети",
+      passwordHash: nextPasswordHash,
+      salt: nextSalt,
+      saturnState: "celebrate",
+    };
+
+    setAccounts((prev) =>
+      prev.map((a) => (a.id === currentUser.id ? updatedUser : a))
+    );
+
+    const handleLower = safeLower(currentUser.handle);
+    setPosts((prev) =>
+      prev.map((p) => {
+        const authorUpdated =
+          safeLower(p.handle) === handleLower
+            ? { ...p, author: nextName, avatar: profileAvatar }
+            : p;
+        const commentsUpdated = (authorUpdated.comments || []).map((c) =>
+          safeLower(c.handle) === handleLower
+            ? { ...c, author: nextName, avatar: profileAvatar }
+            : c
+        );
+        return { ...authorUpdated, comments: commentsUpdated };
+      })
+    );
+
+    setMessages((prev) =>
+      prev.map((m) =>
+        safeLower(m.handle) === handleLower
+          ? { ...m, author: nextName, avatar: profileAvatar }
+          : m
+      )
+    );
+
+    setProfileNewPassword("");
+    setProfileSaved(true);
+  };
+
+  const handleAddFriend = (targetHandleRaw?: string) => {
+    if (!currentUser) return;
+    setFriendMessage(null);
+    const normalized = normalizeHandle(targetHandleRaw ?? friendHandleInput);
+    if (!normalized || normalized.length < 3) {
+      setFriendMessage("Введи корректный @handle друга (например, @alex).");
+      return;
+    }
+    if (safeLower(normalized) === safeLower(currentUser.handle)) {
+      setFriendMessage("Нельзя добавить самого себя в друзья.");
+      return;
+    }
+
+    const exists = accounts.some(
+      (a) => safeLower(a.handle) === safeLower(normalized)
+    );
+    if (!exists) {
+      setFriendMessage(
+        `Пользователь ${normalized} пока не зарегистрирован в Aura Space.`
+      );
+      return;
+    }
+
+    const alreadyFriend = (currentUser.friends || []).some(
+      (h) => safeLower(h) === safeLower(normalized)
+    );
+    if (alreadyFriend) {
+      setFriendMessage(`${normalized} уже есть в твоём списке друзей.`);
+      return;
+    }
+
+    setAccounts((prev) =>
+      prev.map((a) =>
+        a.id === currentUser.id
+          ? { ...a, friends: [...(a.friends || []), normalized] }
+          : a
+      )
+    );
+    if (!targetHandleRaw) {
+      setFriendHandleInput("");
+    }
+    setFriendMessage(`Добавил ${normalized} в друзья!`);
+    setSaturnState("celebrate");
+  };
+
+  const handleRemoveFriend = (targetHandle: string) => {
+    if (!currentUser) return;
+    setAccounts((prev) =>
+      prev.map((a) =>
+        a.id === currentUser.id
+          ? {
+              ...a,
+              friends: (a.friends || []).filter(
+                (h) => safeLower(h) !== safeLower(targetHandle)
+              ),
+            }
+          : a
+      )
+    );
+  };
+
+  const handleCreatePost = (e: React.FormEvent) => {
     e.preventDefault();
     if (!currentUser) return;
     setPostError(null);
 
-    const clean = postInput.trim();
-    if (!clean && !postImage) {
-      setPostError("Напиши текст поста или прикрепи фотографию.");
+    const trimmed = postText.trim();
+    const noteTrimmed = repostNote.trim();
+    const effectiveText = repostTarget ? noteTrimmed : trimmed;
+
+    if (!effectiveText && !postImage && !repostTarget) {
+      setPostError("Напиши текст поста или прикрепи картинку.");
       return;
     }
 
     const newPost: PostItem = {
-      id: `post-${Date.now()}`,
+      id: `post-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
       roomId: activeRoom.id,
       author: currentUser.username,
-      handle: currentUser.handle || "@user",
-      avatar: currentUser.avatar ?? null,
-      text: clean,
-      image: postImage,
-      createdAt: nowTimeLabel(),
+      handle: currentUser.handle,
+      avatar: currentUser.avatar || null,
+      text: effectiveText,
+      image: repostTarget ? null : postImage,
+      createdAt: "только что",
+      pinned: false,
       likes: 0,
       likedByMe: false,
       reactions: {},
+      repostOf: repostTarget
+        ? {
+            originalPostId: repostTarget.id,
+            originalRoomId: repostTarget.roomId,
+            author: repostTarget.author,
+            handle: repostTarget.handle,
+            text: repostTarget.text,
+            image: repostTarget.image || null,
+            createdAt: repostTarget.createdAt,
+          }
+        : null,
       comments: [],
     };
 
     setPosts((prev) => [newPost, ...prev]);
-    setPostInput("");
+    void upsertCloudPost(newPost);
+    setPostText("");
     setPostImage(null);
-    setPostImageUrl("");
-    setShowImageUrlInput(false);
-    bumpStreakOnActivity();
-  }
+    setRepostTarget(null);
+    setRepostNote("");
+    if (postImageInputRef.current) {
+      postImageInputRef.current.value = "";
+    }
+    setSaturnState("celebrate");
+  };
 
-  function handleStartEditPost(post: PostItem) {
+  const handleStartEditPost = (post: PostItem) => {
     setEditingPostId(post.id);
     setEditingPostText(post.text);
-  }
+  };
 
-  function handleSaveEditPost(postId: string) {
+  const handleSaveEditPost = (postId: string) => {
     const trimmed = editingPostText.trim();
+    if (!trimmed) return;
+    let updatedPost: PostItem | null = null;
     setPosts((prev) =>
       prev.map((p) => {
         if (p.id !== postId) return p;
-        if (!trimmed && !p.image && !p.repostOf) return p;
-        return {
-          ...p,
-          text: trimmed,
-          editedAt: nowTimeLabel(),
-        };
+        updatedPost = { ...p, text: trimmed, editedAt: nowTimeLabel() };
+        return updatedPost;
       })
     );
+    if (updatedPost) {
+      void upsertCloudPost(updatedPost);
+    }
     setEditingPostId(null);
     setEditingPostText("");
-    touchCurrentUserActivity();
-  }
+  };
 
-  function handleTogglePinPost(postId: string) {
-    if (!currentUser) return;
-    setPosts((prev) =>
-      prev.map((p) => {
-        if (p.roomId !== activeRoom.id) return p;
-        if (p.id === postId) {
-          return { ...p, pinned: !p.pinned };
-        }
-        return { ...p, pinned: false };
-      })
-    );
-    touchCurrentUserActivity();
-  }
-
-  function handleTogglePostReaction(postId: string, emoji: ReactionEmoji) {
-    if (!currentUser) return;
-    setPosts((prev) =>
-      prev.map((p) =>
-        p.id === postId
-          ? {
-              ...p,
-              reactions: toggleReactionMap(
-                p.reactions,
-                emoji,
-                currentUser.handle || "@user"
-              ),
-            }
-          : p
-      )
-    );
-    touchCurrentUserActivity();
-  }
-
-  function handleOpenRepost(post: PostItem) {
-    const alternativeRoom =
-      rooms.find((r) => r.id !== post.roomId)?.id ?? activeRoom.id;
-    setRepostingPost(post);
-    setRepostTargetRoomId(alternativeRoom);
-    setRepostNote("");
-  }
-
-  function handleConfirmRepost(e: React.FormEvent) {
-    e.preventDefault();
-    if (!currentUser || !repostingPost) return;
-
-    const source = repostingPost.repostOf
-      ? repostingPost.repostOf
-      : {
-          originalPostId: repostingPost.id,
-          originalRoomId: repostingPost.roomId,
-          author: repostingPost.author,
-          handle: repostingPost.handle,
-          text: repostingPost.text,
-          image: repostingPost.image ?? null,
-          createdAt: repostingPost.createdAt,
-        };
-
-    const newPost: PostItem = {
-      id: `post-${Date.now()}`,
-      roomId: repostTargetRoomId,
-      author: currentUser.username,
-      handle: currentUser.handle || "@user",
-      avatar: currentUser.avatar ?? null,
-      text: repostNote.trim(),
-      image: null,
-      createdAt: nowTimeLabel(),
-      likes: 0,
-      likedByMe: false,
-      reactions: {},
-      repostOf: source,
-      comments: [],
-    };
-
-    setPosts((prev) => [newPost, ...prev]);
-    setActiveRoomId(repostTargetRoomId);
-    setActiveTab("feed");
-    setRepostingPost(null);
-    setRepostNote("");
-    bumpStreakOnActivity();
-  }
-
-  function handleToggleLike(postId: string) {
-    if (!currentUser) return;
-    setPosts((prev) =>
-      prev.map((post) => {
-        if (post.id !== postId) return post;
-        const nextLiked = !post.likedByMe;
-        return {
-          ...post,
-          likedByMe: nextLiked,
-          likes: nextLiked ? post.likes + 1 : Math.max(0, post.likes - 1),
-        };
-      })
-    );
-    touchCurrentUserActivity();
-  }
-
-  function handleDeletePost(postId: string) {
-    if (!currentUser) return;
+  const handleDeletePost = (postId: string) => {
     setPosts((prev) => prev.filter((p) => p.id !== postId));
+    void deleteCloudPost(postId);
     if (editingPostId === postId) {
       setEditingPostId(null);
+      setEditingPostText("");
     }
-  }
+  };
 
-  function handleAddComment(e: React.FormEvent, postId: string) {
+  const handleTogglePinPost = (postId: string) => {
+    const affectedPosts: PostItem[] = [];
+    setPosts((prev) => {
+      const target = prev.find((p) => p.id === postId);
+      if (!target) return prev;
+      const nextPinnedState = !Boolean(target.pinned);
+      return prev.map((p) => {
+        if (p.id === postId) {
+          const updated = { ...p, pinned: nextPinnedState };
+          affectedPosts.push(updated);
+          return updated;
+        }
+        if (
+          nextPinnedState &&
+          p.roomId === target.roomId &&
+          Boolean(p.pinned)
+        ) {
+          const updated = { ...p, pinned: false };
+          affectedPosts.push(updated);
+          return updated;
+        }
+        return p;
+      });
+    });
+    for (const item of affectedPosts) {
+      void upsertCloudPost(item);
+    }
+  };
+
+  const handleToggleLike = (postId: string) => {
+    let updatedPost: PostItem | null = null;
+    setPosts((prev) =>
+      prev.map((p) => {
+        if (p.id !== postId) return p;
+        const nextLiked = !p.likedByMe;
+        updatedPost = {
+          ...p,
+          likedByMe: nextLiked,
+          likes: nextLiked ? p.likes + 1 : Math.max(0, p.likes - 1),
+        };
+        return updatedPost;
+      })
+    );
+    if (updatedPost) {
+      void upsertCloudPost(updatedPost);
+    }
+  };
+
+  const handleTogglePostReaction = (postId: string, emoji: ReactionEmoji) => {
+    if (!currentUser) return;
+    let updatedPost: PostItem | null = null;
+    setPosts((prev) =>
+      prev.map((p) => {
+        if (p.id !== postId) return p;
+        updatedPost = {
+          ...p,
+          reactions: toggleReactionMap(p.reactions, emoji, currentUser.handle),
+        };
+        return updatedPost;
+      })
+    );
+    if (updatedPost) {
+      void upsertCloudPost(updatedPost);
+    }
+  };
+
+  const handleAddComment = (postId: string, e: React.FormEvent) => {
     e.preventDefault();
     if (!currentUser) return;
-    const draft = (commentDrafts[postId] ?? "").trim();
-    if (!draft) return;
+    const raw = commentInputs[postId] || "";
+    const trimmed = raw.trim();
+    if (!trimmed) return;
 
     const newComment: CommentItem = {
-      id: `c-${Date.now()}`,
+      id: `c-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
       author: currentUser.username,
-      handle: currentUser.handle || "@user",
-      avatar: currentUser.avatar ?? null,
-      text: draft,
-      createdAt: nowTimeLabel(),
+      handle: currentUser.handle,
+      avatar: currentUser.avatar || null,
+      text: trimmed,
+      createdAt: "только что",
     };
 
+    let updatedPost: PostItem | null = null;
     setPosts((prev) =>
-      prev.map((post) =>
-        post.id === postId
-          ? { ...post, comments: [...(post.comments || []), newComment] }
-          : post
-      )
+      prev.map((p) => {
+        if (p.id !== postId) return p;
+        updatedPost = {
+          ...p,
+          comments: [...(p.comments || []), newComment],
+        };
+        return updatedPost;
+      })
     );
-    setCommentDrafts((prev) => ({ ...prev, [postId]: "" }));
-    setOpenComments((prev) => ({ ...prev, [postId]: true }));
-    bumpStreakOnActivity();
-  }
+    if (updatedPost) {
+      void upsertCloudPost(updatedPost);
+    }
+    setCommentInputs((prev) => ({ ...prev, [postId]: "" }));
+  };
 
-  function handleSendChat(e: React.FormEvent) {
+  const handleSendChat = (e: React.FormEvent) => {
     e.preventDefault();
     if (!currentUser) return;
-    const clean = chatInput.trim();
-    if (!clean) return;
+    const trimmed = chatText.trim();
+    if (!trimmed) return;
 
-    const newMsg: ChatMessage = {
-      id: `m-${Date.now()}`,
+    const msg: ChatMessage = {
+      id: `m-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
       roomId: activeRoom.id,
       author: currentUser.username,
-      handle: currentUser.handle || "@user",
-      avatar: currentUser.avatar ?? null,
-      text: clean,
+      handle: currentUser.handle,
+      avatar: currentUser.avatar || null,
+      text: trimmed,
       createdAt: nowTimeLabel(),
+      pinned: false,
       reactions: {},
     };
 
-    setMessages((prev) => [...prev, newMsg]);
-    setChatInput("");
-    bumpStreakOnActivity();
-  }
+    setMessages((prev) => [...prev, msg]);
+    setChatText("");
+  };
 
-  function handleStartEditMessage(msg: ChatMessage) {
-    setEditingMsgId(msg.id);
-    setEditingMsgText(msg.text);
-  }
+  const handleStartEditMessage = (msg: ChatMessage) => {
+    setEditingMessageId(msg.id);
+    setEditingMessageText(msg.text);
+  };
 
-  function handleSaveEditMessage(msgId: string) {
-    const trimmed = editingMsgText.trim();
+  const handleSaveEditMessage = (msgId: string) => {
+    const trimmed = editingMessageText.trim();
     if (!trimmed) return;
     setMessages((prev) =>
       prev.map((m) =>
-        m.id === msgId
-          ? { ...m, text: trimmed, editedAt: nowTimeLabel() }
-          : m
+        m.id === msgId ? { ...m, text: trimmed, editedAt: nowTimeLabel() } : m
       )
     );
-    setEditingMsgId(null);
-    setEditingMsgText("");
-    touchCurrentUserActivity();
-  }
+    setEditingMessageId(null);
+    setEditingMessageText("");
+  };
 
-  function handleTogglePinMessage(msgId: string) {
-    if (!currentUser) return;
-    setMessages((prev) =>
-      prev.map((m) => {
-        if (m.roomId !== activeRoom.id) return m;
-        if (m.id === msgId) {
-          return { ...m, pinned: !m.pinned };
+  const handleDeleteMessage = (msgId: string) => {
+    setMessages((prev) => prev.filter((m) => m.id !== msgId));
+    if (editingMessageId === msgId) {
+      setEditingMessageId(null);
+      setEditingMessageText("");
+    }
+  };
+
+  const handleTogglePinMessage = (msgId: string) => {
+    setMessages((prev) => {
+      const target = prev.find((m) => m.id === msgId);
+      if (!target) return prev;
+      const nextPinned = !Boolean(target.pinned);
+      return prev.map((m) => {
+        if (m.id === msgId) return { ...m, pinned: nextPinned };
+        if (nextPinned && m.roomId === target.roomId && Boolean(m.pinned)) {
+          return { ...m, pinned: false };
         }
-        return { ...m, pinned: false };
-      })
-    );
-    touchCurrentUserActivity();
-  }
+        return m;
+      });
+    });
+  };
 
-  function handleToggleMessageReaction(msgId: string, emoji: ReactionEmoji) {
+  const handleToggleMessageReaction = (msgId: string, emoji: ReactionEmoji) => {
     if (!currentUser) return;
     setMessages((prev) =>
       prev.map((m) =>
@@ -2731,2670 +2556,1852 @@ export default function HomePage() {
               reactions: toggleReactionMap(
                 m.reactions,
                 emoji,
-                currentUser.handle || "@user"
+                currentUser.handle
               ),
             }
           : m
       )
     );
-    touchCurrentUserActivity();
+  };
+
+  const handleOpenProfile = (handle: string) => {
+    const normalized = normalizeHandle(handle);
+    if (!normalized) return;
+    setInspectedHandle(normalized);
+    setCopiedHandle(false);
+  };
+
+  const handleCopyHandle = (handle: string) => {
+    if (typeof navigator !== "undefined" && navigator.clipboard) {
+      navigator.clipboard.writeText(handle).catch(() => {});
+    }
+    setCopiedHandle(true);
+    window.setTimeout(() => setCopiedHandle(false), 1600);
+  };
+
+  const canManageItem = (authorHandle: string) => {
+    if (!currentUser) return false;
+    return (
+      currentUser.accountType === "official" ||
+      safeLower(authorHandle) === safeLower(currentUser.handle)
+    );
+  };
+
+  if (!hydrated) {
+    return (
+      <div className="min-h-screen bg-[#090414] text-[#F8F5FF] flex items-center justify-center">
+        <div className="text-sm font-bold tracking-wider text-purple-200/80">
+          Загрузка Aura Space...
+        </div>
+      </div>
+    );
   }
 
-  function handleDeleteMessage(msgId: string) {
-    setMessages((prev) => prev.filter((m) => m.id !== msgId));
-    if (editingMsgId === msgId) {
-      setEditingMsgId(null);
-    }
-  }
+  if (!currentUser) {
+    return (
+      <div className="min-h-screen bg-[#090414] text-[#F8F5FF] flex items-center justify-center p-4">
+        <div className="w-full max-w-md rounded-2xl border border-purple-500/25 bg-[#130926]/95 p-6 shadow-2xl">
+          <div className="flex flex-col items-center text-center mb-5">
+            <SaturnMascot
+              state="idle"
+              size={84}
+              onInteract={() => {}}
+            />
+            <h1 className="mt-2 text-2xl font-black tracking-tight text-white">
+              Aura Space
+            </h1>
+            <p className="mt-1 text-xs text-purple-200/75">
+              Войди в свой аккаунт или зарегистрируйся, чтобы попасть в орбиту
+            </p>
+          </div>
 
-  const displayedProfileUser = inspectedAccount ?? currentUser;
-  const isOwnProfile =
-    !!currentUser &&
-    !!displayedProfileUser &&
-    currentUser.id === displayedProfileUser.id;
-
-  const knownCommunityHandles = useMemo(() => {
-    const map = new Map<
-      string,
-      {
-        username: string;
-        handle: string;
-        avatar: string | null;
-        accountType: AccountKind;
-        subscribers: number;
-        presence: PresenceKind;
-      }
-    >();
-    for (const acc of accounts) {
-      const key = safeLower(acc?.handle);
-      if (!key) continue;
-      map.set(key, {
-        username: acc.username,
-        handle: acc.handle,
-        avatar: acc.avatar ?? null,
-        accountType: acc.accountType,
-        subscribers: acc.subscribers ?? 0,
-        presence: acc.presence || "online",
-      });
-    }
-    for (const p of posts) {
-      const key = safeLower(p?.handle);
-      if (!key) continue;
-      if (!map.has(key)) {
-        map.set(key, {
-          username: p.author,
-          handle: p.handle,
-          avatar: p.avatar ?? null,
-          accountType: "personal",
-          subscribers: 0,
-          presence: "orbit",
-        });
-      }
-    }
-    return Array.from(map.values());
-  }, [accounts, posts]);
-
-  const remotePeerList = useMemo(
-    () => Object.values(remotePeers),
-    [remotePeers]
-  );
-
-  return (
-    <main className="min-h-screen bg-[#090414] px-4 py-6 text-white">
-      <div className="mx-auto max-w-6xl space-y-6">
-        {/* Верхняя панель */}
-        <header className="flex flex-wrap items-center justify-between gap-4 border-b border-fuchsia-500/20 pb-4">
-          <div className="flex items-center gap-3">
+          <div className="grid grid-cols-2 gap-2 rounded-xl bg-[#090414] p-1 border border-purple-500/20 mb-5">
             <button
               type="button"
               onClick={() => {
-                setInspectedHandle(null);
-                setActiveTab("feed");
+                setAuthMode("login");
+                setAuthError(null);
+                setAuthSuggestion(null);
               }}
-              className="bg-gradient-to-r from-[#E0AAFF] via-[#FF70B8] to-[#FF2A85] bg-clip-text text-3xl font-black tracking-tight text-transparent text-left"
+              className={`rounded-lg py-2 text-xs font-extrabold transition ${
+                authMode === "login"
+                  ? "bg-gradient-to-r from-[#9D4EDD] to-[#FF2A85] text-white"
+                  : "text-purple-200/75 hover:text-white"
+              }`}
             >
-              Aura Space
+              Вход
             </button>
-            <span className="rounded-full border border-fuchsia-500/30 bg-[#140D2B] px-2.5 py-0.5 text-[11px] font-semibold text-pink-200">
-              {rooms.length} кан. • {accounts.length} акк. • {posts.length} постов
-            </span>
+            <button
+              type="button"
+              onClick={() => {
+                setAuthMode("register");
+                setAuthError(null);
+                setAuthSuggestion(null);
+              }}
+              className={`rounded-lg py-2 text-xs font-extrabold transition ${
+                authMode === "register"
+                  ? "bg-gradient-to-r from-[#9D4EDD] to-[#FF2A85] text-white"
+                  : "text-purple-200/75 hover:text-white"
+              }`}
+            >
+              Регистрация
+            </button>
           </div>
 
-          {currentUser ? (
-            <div className="flex flex-wrap items-center gap-2.5">
-              {quickSwitchAccounts.length > 1 && (
-                <div className="flex items-center gap-1 rounded-xl border border-purple-500/30 bg-[#090414] p-1">
-                  <Repeat className="ml-1.5 h-3.5 w-3.5 text-pink-300" />
-                  {quickSwitchAccounts.map((acc) => {
-                    const active = acc.id === currentUser.id;
-                    return (
+          {authError && (
+            <div className="mb-4 rounded-xl border border-pink-500/40 bg-pink-950/40 px-3.5 py-2.5 text-xs font-semibold text-pink-200">
+              <div>{authError}</div>
+              {authSuggestion && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setRegEmail(authSuggestion);
+                    setAuthSuggestion(null);
+                    setAuthError(null);
+                  }}
+                  className="mt-1.5 inline-flex items-center gap-1 rounded-lg border border-pink-400/40 bg-[#FF2A85]/20 px-2.5 py-1 text-[11px] font-bold text-white hover:bg-[#FF2A85]/35"
+                >
+                  Подставить {authSuggestion}
+                </button>
+              )}
+            </div>
+          )}
+
+          {authMode === "login" ? (
+            <form onSubmit={handleLogin} className="space-y-3.5">
+              <div>
+                <label className="block text-xs font-bold text-purple-200/85 mb-1">
+                  @handle, email или имя
+                </label>
+                <input
+                  type="text"
+                  value={loginIdentifier}
+                  onChange={(e) => setLoginIdentifier(e.target.value)}
+                  placeholder="@handle или name@gmail.com"
+                  autoComplete="username"
+                  className="w-full rounded-xl border border-purple-500/25 bg-[#090414] px-3.5 py-2.5 text-sm text-white placeholder-purple-300/40 focus:border-[#FF2A85] focus:outline-none"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-purple-200/85 mb-1">
+                  Пароль
+                </label>
+                <input
+                  type="password"
+                  value={loginPassword}
+                  onChange={(e) => setLoginPassword(e.target.value)}
+                  placeholder="••••••••"
+                  autoComplete="current-password"
+                  className="w-full rounded-xl border border-purple-500/25 bg-[#090414] px-3.5 py-2.5 text-sm text-white placeholder-purple-300/40 focus:border-[#FF2A85] focus:outline-none"
+                />
+              </div>
+
+              <button
+                type="submit"
+                disabled={authSubmitting}
+                className="w-full rounded-xl bg-gradient-to-r from-[#9D4EDD] to-[#FF2A85] py-2.5 text-sm font-extrabold text-white shadow-lg hover:opacity-95 disabled:opacity-50 transition"
+              >
+                {authSubmitting ? "Входим..." : "Войти в Aura Space"}
+              </button>
+            </form>
+          ) : (
+            <form onSubmit={handleRegister} className="space-y-3">
+              <div>
+                <label className="block text-xs font-bold text-purple-200/85 mb-1">
+                  Имя
+                </label>
+                <input
+                  type="text"
+                  value={regUsername}
+                  onChange={(e) => setRegUsername(e.target.value)}
+                  placeholder="Как тебя называть"
+                  className="w-full rounded-xl border border-purple-500/25 bg-[#090414] px-3.5 py-2 text-sm text-white placeholder-purple-300/40 focus:border-[#FF2A85] focus:outline-none"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-purple-200/85 mb-1">
+                  Уникальный @handle
+                </label>
+                <input
+                  type="text"
+                  value={regHandle}
+                  onChange={(e) => setRegHandle(e.target.value)}
+                  placeholder="@your_handle"
+                  className="w-full rounded-xl border border-purple-500/25 bg-[#090414] px-3.5 py-2 text-sm text-white placeholder-purple-300/40 focus:border-[#FF2A85] focus:outline-none"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-purple-200/85 mb-1">
+                  Электронная почта
+                </label>
+                <input
+                  type="email"
+                  value={regEmail}
+                  onChange={(e) => {
+                    setRegEmail(e.target.value);
+                    if (authSuggestion) setAuthSuggestion(null);
+                  }}
+                  placeholder="you@gmail.com"
+                  autoComplete="email"
+                  className="w-full rounded-xl border border-purple-500/25 bg-[#090414] px-3.5 py-2 text-sm text-white placeholder-purple-300/40 focus:border-[#FF2A85] focus:outline-none"
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-2.5">
+                <div>
+                  <label className="block text-xs font-bold text-purple-200/85 mb-1">
+                    Пароль
+                  </label>
+                  <input
+                    type="password"
+                    value={regPassword}
+                    onChange={(e) => setRegPassword(e.target.value)}
+                    placeholder="Мин. 4 симв."
+                    autoComplete="new-password"
+                    className="w-full rounded-xl border border-purple-500/25 bg-[#090414] px-3 py-2 text-sm text-white placeholder-purple-300/40 focus:border-[#FF2A85] focus:outline-none"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-bold text-purple-200/85 mb-1">
+                    Повтор пароля
+                  </label>
+                  <input
+                    type="password"
+                    value={regPasswordConfirm}
+                    onChange={(e) => setRegPasswordConfirm(e.target.value)}
+                    placeholder="Повтори пароль"
+                    autoComplete="new-password"
+                    className="w-full rounded-xl border border-purple-500/25 bg-[#090414] px-3 py-2 text-sm text-white placeholder-purple-300/40 focus:border-[#FF2A85] focus:outline-none"
+                  />
+                </div>
+              </div>
+
+              <button
+                type="submit"
+                disabled={authSubmitting}
+                className="w-full rounded-xl bg-gradient-to-r from-[#9D4EDD] to-[#FF2A85] py-2.5 text-sm font-extrabold text-white shadow-lg hover:opacity-95 disabled:opacity-50 transition mt-1"
+              >
+                {authSubmitting ? "Создаём..." : "Создать аккаунт"}
+              </button>
+            </form>
+          )}
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="min-h-screen bg-[#090414] text-[#F8F5FF] flex flex-col">
+      <header className="sticky top-0 z-30 border-b border-purple-500/20 bg-[#090414]/90 backdrop-blur-md">
+        <div className="mx-auto flex max-w-7xl items-center justify-between gap-3 px-4 py-2.5">
+          <div className="flex items-center gap-3 min-w-0">
+            <SaturnMascot
+              state={currentUser.saturnState || "idle"}
+              size={42}
+              onInteract={() =>
+                setSaturnState(
+                  currentUser.saturnState === "celebrate" ? "idle" : "celebrate"
+                )
+              }
+            />
+            <div className="min-w-0">
+              <div className="flex items-center gap-2">
+                <span className="text-base font-black tracking-tight text-white">
+                  Aura Space
+                </span>
+                <span className="rounded-full border border-fuchsia-500/30 bg-[#9D4EDD]/15 px-2 py-0.5 text-[10px] font-bold text-pink-200">
+                  #{activeRoom.name}
+                </span>
+              </div>
+              <p className="truncate text-[11px] text-purple-200/70">
+                {activeRoom.topic}
+              </p>
+            </div>
+          </div>
+
+          <nav className="flex items-center gap-1.5">
+            <button
+              type="button"
+              onClick={() => setActiveTab("feed")}
+              className={`rounded-xl px-3 py-1.5 text-xs font-extrabold transition ${
+                activeTab === "feed"
+                  ? "bg-gradient-to-r from-[#9D4EDD] to-[#FF2A85] text-white"
+                  : "bg-white/5 text-purple-200/80 hover:bg-white/10 hover:text-white"
+              }`}
+            >
+              Лента
+            </button>
+            <button
+              type="button"
+              onClick={() => setActiveTab("chat")}
+              className={`rounded-xl px-3 py-1.5 text-xs font-extrabold transition ${
+                activeTab === "chat"
+                  ? "bg-gradient-to-r from-[#9D4EDD] to-[#FF2A85] text-white"
+                  : "bg-white/5 text-purple-200/80 hover:bg-white/10 hover:text-white"
+              }`}
+            >
+              Чат
+            </button>
+            <button
+              type="button"
+              onClick={() => setActiveTab("friends")}
+              className={`inline-flex items-center gap-1.5 rounded-xl px-3 py-1.5 text-xs font-extrabold transition ${
+                activeTab === "friends"
+                  ? "bg-gradient-to-r from-[#9D4EDD] to-[#FF2A85] text-white"
+                  : "bg-white/5 text-purple-200/80 hover:bg-white/10 hover:text-white"
+              }`}
+            >
+              <Users className="h-3.5 w-3.5" />
+              <span>Друзья ({friendsList.length})</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => setActiveTab("profile")}
+              className={`rounded-xl px-3 py-1.5 text-xs font-extrabold transition ${
+                activeTab === "profile"
+                  ? "bg-gradient-to-r from-[#9D4EDD] to-[#FF2A85] text-white"
+                  : "bg-white/5 text-purple-200/80 hover:bg-white/10 hover:text-white"
+              }`}
+            >
+              Профиль
+            </button>
+          </nav>
+
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => handleOpenProfile(currentUser.handle)}
+              className="hidden sm:flex items-center gap-2 rounded-xl border border-purple-500/20 bg-[#130926] px-2.5 py-1.5 text-left hover:border-pink-400/40 transition"
+            >
+              <AvatarBadge
+                name={currentUser.username}
+                src={currentUser.avatar}
+                size="sm"
+                presence={currentUser.presence}
+              />
+              <div className="leading-tight">
+                <div className="flex items-center gap-1 text-xs font-extrabold text-white">
+                  <span>{currentUser.username}</span>
+                  <VerifiedBadge account={currentUser} size="sm" />
+                </div>
+                <div className="text-[10px] text-purple-200/70">
+                  {currentUser.handle}
+                </div>
+              </div>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => {
+                setAddAccError(null);
+                setAddAccSuggestion(null);
+                setShowAddAccountModal(true);
+              }}
+              title="Добавить или создать ещё один аккаунт"
+              className="inline-flex items-center gap-1 rounded-xl border border-purple-500/25 bg-white/5 px-2.5 py-2 text-xs font-bold text-purple-100 hover:border-pink-400/40 hover:bg-white/10 transition"
+            >
+              <UserPlus className="h-3.5 w-3.5 text-pink-300" />
+              <span className="hidden md:inline">Аккаунт</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={handleLogout}
+              title="Выйти из аккаунта"
+              className="inline-flex items-center gap-1 rounded-xl border border-purple-500/25 bg-white/5 px-2.5 py-2 text-xs font-bold text-purple-200/80 hover:border-pink-500/40 hover:text-white transition"
+            >
+              <LogOut className="h-3.5 w-3.5" />
+              <span className="hidden md:inline">Выйти</span>
+            </button>
+          </div>
+        </div>
+      </header>
+
+      <div className="mx-auto grid w-full max-w-7xl flex-1 grid-cols-1 gap-5 px-4 py-5 lg:grid-cols-12">
+        <aside className="space-y-4 lg:col-span-3">
+          <div className="rounded-2xl border border-purple-500/20 bg-[#130926]/90 p-3.5">
+            <div className="flex items-center justify-between mb-2.5">
+              <span className="text-[11px] font-extrabold uppercase tracking-wider text-purple-200/70">
+                Каналы
+              </span>
+              <button
+                type="button"
+                onClick={() => {
+                  setShowChannelForm((v) => !v);
+                  setChannelError(null);
+                }}
+                title="Создать новый канал"
+                className="inline-flex items-center gap-1 rounded-lg border border-fuchsia-500/30 bg-[#9D4EDD]/15 px-2 py-1 text-[11px] font-bold text-pink-200 hover:bg-[#9D4EDD]/25 transition"
+              >
+                <Plus className="h-3 w-3" />
+                <span>Новый</span>
+              </button>
+            </div>
+
+            {showChannelForm && (
+              <form
+                onSubmit={handleCreateChannel}
+                className="mb-3 space-y-2 rounded-xl border border-purple-500/25 bg-[#090414]/90 p-2.5"
+              >
+                <input
+                  type="text"
+                  value={newChannelName}
+                  onChange={(e) => setNewChannelName(e.target.value)}
+                  placeholder="название-канала"
+                  className="w-full rounded-lg border border-purple-500/25 bg-[#130926] px-2.5 py-1.5 text-xs text-white placeholder-purple-300/40 focus:border-[#FF2A85] focus:outline-none"
+                />
+                <input
+                  type="text"
+                  value={newChannelTopic}
+                  onChange={(e) => setNewChannelTopic(e.target.value)}
+                  placeholder="Тема канала (необязательно)"
+                  className="w-full rounded-lg border border-purple-500/25 bg-[#130926] px-2.5 py-1.5 text-xs text-white placeholder-purple-300/40 focus:border-[#FF2A85] focus:outline-none"
+                />
+                {channelError && (
+                  <p className="text-[11px] font-semibold text-pink-300">
+                    {channelError}
+                  </p>
+                )}
+                <div className="flex justify-end gap-1.5">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setShowChannelForm(false);
+                      setChannelError(null);
+                    }}
+                    className="rounded-lg px-2 py-1 text-[11px] font-bold text-purple-200/70 hover:text-white"
+                  >
+                    Отмена
+                  </button>
+                  <button
+                    type="submit"
+                    className="rounded-lg bg-gradient-to-r from-[#9D4EDD] to-[#FF2A85] px-2.5 py-1 text-[11px] font-extrabold text-white"
+                  >
+                    Создать
+                  </button>
+                </div>
+              </form>
+            )}
+
+            <div className="space-y-1">
+              {rooms.map((room) => {
+                const active = room.id === activeRoom.id;
+                return (
+                  <button
+                    key={room.id}
+                    type="button"
+                    onClick={() => handleSwitchRoom(room.id)}
+                    className={`flex w-full items-center justify-between rounded-xl px-3 py-2 text-left text-xs font-bold transition ${
+                      active
+                        ? "bg-gradient-to-r from-[#9D4EDD]/30 to-[#FF2A85]/25 text-white border border-pink-400/35"
+                        : "text-purple-200/75 hover:bg-white/5 hover:text-white border border-transparent"
+                    }`}
+                  >
+                    <span className="flex items-center gap-2 truncate">
+                      <Hash className="h-3.5 w-3.5 shrink-0 text-pink-400" />
+                      <span className="truncate">{room.name}</span>
+                    </span>
+                    {active && inCall && (
+                      <span className="ml-1.5 h-2 w-2 rounded-full bg-emerald-400 animate-pulse" />
+                    )}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+
+          <div className="rounded-2xl border border-purple-500/20 bg-[#130926]/90 p-3.5 space-y-3">
+            <div className="flex items-center justify-between">
+              <span className="text-[11px] font-extrabold uppercase tracking-wider text-purple-200/70">
+                Голос · #{activeRoom.name}
+              </span>
+              {inCall && (
+                <span className="rounded-md bg-emerald-500/15 px-2 py-0.5 text-[11px] font-extrabold text-emerald-300">
+                  {formatCallDuration(callSeconds)}
+                </span>
+              )}
+            </div>
+
+            <button
+              type="button"
+              onClick={handleToggleCall}
+              className={`flex w-full items-center justify-center gap-2 rounded-xl py-2.5 text-xs font-extrabold transition ${
+                inCall
+                  ? "bg-rose-600/90 text-white hover:bg-rose-500"
+                  : "bg-gradient-to-r from-[#9D4EDD] to-[#FF2A85] text-white hover:opacity-95"
+              }`}
+            >
+              {inCall ? (
+                <>
+                  <PhoneOff className="h-4 w-4" />
+                  <span>Выйти из голоса</span>
+                </>
+              ) : (
+                <>
+                  <PhoneCall className="h-4 w-4" />
+                  <span>Войти в голос</span>
+                </>
+              )}
+            </button>
+
+            {inCall && (
+              <>
+                <div className="grid grid-cols-2 gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setMuted((m) => !m)}
+                    className={`flex items-center justify-center gap-1.5 rounded-xl border py-2 text-xs font-bold transition ${
+                      muted
+                        ? "border-rose-400/40 bg-rose-950/50 text-rose-200"
+                        : "border-purple-500/25 bg-white/5 text-white hover:bg-white/10"
+                    }`}
+                  >
+                    {muted ? (
+                      <>
+                        <MicOff className="h-3.5 w-3.5" />
+                        <span>Микрофон выкл</span>
+                      </>
+                    ) : (
+                      <>
+                        <Mic className="h-3.5 w-3.5 text-emerald-300" />
+                        <span>Микрофон вкл</span>
+                      </>
+                    )}
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => setDeafened((d) => !d)}
+                    className={`flex items-center justify-center gap-1.5 rounded-xl border py-2 text-xs font-bold transition ${
+                      deafened
+                        ? "border-amber-400/40 bg-amber-950/50 text-amber-200"
+                        : "border-purple-500/25 bg-white/5 text-white hover:bg-white/10"
+                    }`}
+                  >
+                    {deafened ? (
+                      <>
+                        <VolumeX className="h-3.5 w-3.5" />
+                        <span>Звук выкл</span>
+                      </>
+                    ) : (
+                      <>
+                        <Volume2 className="h-3.5 w-3.5 text-pink-300" />
+                        <span>Звук вкл</span>
+                      </>
+                    )}
+                  </button>
+                </div>
+
+                <div>
+                  <div className="text-[11px] font-bold text-purple-200/70 mb-1">
+                    Уровень микрофона
+                  </div>
+                  <VoiceLevelBar level={voiceLevel} />
+                </div>
+
+                <div className="space-y-1.5 pt-1 border-t border-purple-500/15">
+                  <div className="text-[11px] font-bold text-purple-200/75">
+                    В комнате ({1 + remotePeers.length})
+                  </div>
+                  <div className="flex items-center justify-between rounded-lg bg-[#090414]/80 px-2.5 py-1.5 text-xs">
+                    <span className="font-bold text-white truncate">
+                      {currentUser.username} (ты)
+                    </span>
+                    <span className="text-[10px] font-semibold text-emerald-300">
+                      {muted ? "muted" : "live"}
+                    </span>
+                  </div>
+                  {remotePeers.map((peer) => (
+                    <div
+                      key={peer.peerId}
+                      className="flex items-center justify-between rounded-lg bg-[#090414]/80 px-2.5 py-1.5 text-xs"
+                    >
+                      <span className="font-bold text-pink-200 truncate">
+                        {peer.username}
+                      </span>
+                      <span className="text-[10px] text-purple-200/70">
+                        {peer.handle}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              </>
+            )}
+
+            {callStatus && (
+              <p className="text-[11px] leading-snug text-purple-200/80">
+                {callStatus}
+              </p>
+            )}
+          </div>
+
+          <div className="rounded-2xl border border-purple-500/20 bg-[#130926]/90 p-3.5">
+            <div className="flex items-center justify-between mb-2.5">
+              <span className="text-[11px] font-extrabold uppercase tracking-wider text-purple-200/70">
+                Участники ({accounts.length})
+              </span>
+            </div>
+            <div className="space-y-2 max-h-64 overflow-y-auto pr-0.5">
+              {accounts.map((acc) => {
+                const pMeta = PRESENCE_META[acc.presence || "online"];
+                return (
+                  <button
+                    key={acc.id}
+                    type="button"
+                    onClick={() => handleOpenProfile(acc.handle)}
+                    className="flex w-full items-center justify-between gap-2 rounded-xl bg-[#090414]/65 px-2.5 py-2 text-left hover:bg-white/5 transition"
+                  >
+                    <div className="flex items-center gap-2 min-w-0">
+                      <AvatarBadge
+                        name={acc.username}
+                        src={acc.avatar}
+                        size="sm"
+                        presence={acc.presence}
+                      />
+                      <div className="min-w-0">
+                        <div className="flex items-center gap-1 text-xs font-bold text-white truncate">
+                          <span className="truncate">{acc.username}</span>
+                          <VerifiedBadge account={acc} size="sm" />
+                        </div>
+                        <div className="truncate text-[10px] text-purple-200/65">
+                          {acc.mood || pMeta.label}
+                        </div>
+                      </div>
+                    </div>
+                    <span
+                      className={`shrink-0 rounded-md border px-1.5 py-0.5 text-[10px] font-bold ${pMeta.badgeClass}`}
+                    >
+                      {pMeta.label}
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        </aside>
+
+        <main className="space-y-4 lg:col-span-9">
+          {activeTab === "feed" && (
+            <>
+              <form
+                onSubmit={handleCreatePost}
+                className="rounded-2xl border border-purple-500/20 bg-[#130926]/90 p-4 space-y-3"
+              >
+                <div className="flex items-start gap-3">
+                  <AvatarBadge
+                    name={currentUser.username}
+                    src={currentUser.avatar}
+                    size="md"
+                    presence={currentUser.presence}
+                  />
+                  <div className="flex-1 space-y-2.5">
+                    {repostTarget ? (
+                      <div className="space-y-2">
+                        <div className="flex items-center justify-between rounded-xl border border-fuchsia-500/30 bg-[#090414]/80 px-3 py-2 text-xs">
+                          <span className="font-bold text-pink-200">
+                            Репост поста от {repostTarget.handle}
+                          </span>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setRepostTarget(null);
+                              setRepostNote("");
+                            }}
+                            className="text-purple-200/70 hover:text-white"
+                          >
+                            <X className="h-3.5 w-3.5" />
+                          </button>
+                        </div>
+                        <input
+                          type="text"
+                          value={repostNote}
+                          onChange={(e) => setRepostNote(e.target.value)}
+                          placeholder="Добавь свой комментарий к репосту (необязательно)..."
+                          className="w-full rounded-xl border border-purple-500/25 bg-[#090414] px-3.5 py-2 text-sm text-white placeholder-purple-300/40 focus:border-[#FF2A85] focus:outline-none"
+                        />
+                        <div className="rounded-xl border border-purple-500/20 bg-[#090414]/60 p-3 text-xs text-purple-100/90">
+                          <div className="font-bold text-pink-200 mb-1">
+                            {repostTarget.author} · {repostTarget.handle}
+                          </div>
+                          <p className="whitespace-pre-wrap break-words">
+                            {repostTarget.text}
+                          </p>
+                        </div>
+                      </div>
+                    ) : (
+                      <textarea
+                        rows={3}
+                        value={postText}
+                        onChange={(e) => setPostText(e.target.value)}
+                        placeholder={`Что нового в #${activeRoom.name}? Используй @handle для упоминаний...`}
+                        className="w-full resize-none rounded-xl border border-purple-500/25 bg-[#090414] px-3.5 py-2.5 text-sm text-white placeholder-purple-300/40 focus:border-[#FF2A85] focus:outline-none"
+                      />
+                    )}
+
+                    {postImage && !repostTarget && (
+                      <div className="relative inline-block">
+                        <img
+                          src={postImage}
+                          alt="Предпросмотр"
+                          className="max-h-56 rounded-xl border border-purple-500/25 object-cover"
+                        />
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setPostImage(null);
+                            if (postImageInputRef.current) {
+                              postImageInputRef.current.value = "";
+                            }
+                          }}
+                          className="absolute top-2 right-2 rounded-full bg-[#090414]/85 p-1 text-white hover:bg-rose-600 transition"
+                        >
+                          <X className="h-3.5 w-3.5" />
+                        </button>
+                      </div>
+                    )}
+
+                    {postError && (
+                      <p className="text-xs font-semibold text-pink-300">
+                        {postError}
+                      </p>
+                    )}
+
+                    <div className="flex flex-wrap items-center justify-between gap-2 pt-1">
+                      <div className="flex items-center gap-2">
+                        {!repostTarget && (
+                          <>
+                            <input
+                              ref={postImageInputRef}
+                              type="file"
+                              accept="image/*"
+                              onChange={handlePostImageUpload}
+                              className="hidden"
+                            />
+                            <button
+                              type="button"
+                              onClick={() => postImageInputRef.current?.click()}
+                              className="inline-flex items-center gap-1.5 rounded-xl border border-purple-500/25 bg-white/5 px-3 py-1.5 text-xs font-bold text-purple-100 hover:border-pink-400/40 hover:bg-white/10 transition"
+                            >
+                              <ImagePlus className="h-3.5 w-3.5 text-pink-300" />
+                              <span>Фото</span>
+                            </button>
+                          </>
+                        )}
+                      </div>
+
                       <button
-                        key={acc.id}
-                        type="button"
-                        onClick={() => switchActiveAccount(acc.id)}
-                        title={`${acc.username} (${acc.handle})`}
-                        className={`flex items-center gap-1.5 rounded-lg px-2 py-1 text-[11px] font-bold transition ${
-                          active
-                            ? "bg-gradient-to-r from-[#9D4EDD] to-[#FF2A85] text-white"
-                            : "text-purple-200/80 hover:bg-white/5 hover:text-white"
-                        }`}
+                        type="submit"
+                        className="inline-flex items-center gap-1.5 rounded-xl bg-gradient-to-r from-[#9D4EDD] to-[#FF2A85] px-4 py-2 text-xs font-extrabold text-white shadow-md hover:opacity-95 transition"
                       >
+                        <Send className="h-3.5 w-3.5" />
+                        <span>{repostTarget ? "Сделать репост" : "Опубликовать"}</span>
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              </form>
+
+              {pinnedPost && (
+                <div className="rounded-2xl border border-amber-400/35 bg-amber-950/20 px-4 py-3 flex items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <div className="flex items-center gap-1.5 text-[11px] font-extrabold uppercase tracking-wider text-amber-300">
+                      <Pin className="h-3.5 w-3.5" />
+                      <span>Закреплённый пост · {pinnedPost.handle}</span>
+                    </div>
+                    <p className="mt-1 text-xs text-amber-50/95 line-clamp-2">
+                      {pinnedPost.text || "Медиапост"}
+                    </p>
+                  </div>
+                  {canManageItem(pinnedPost.handle) && (
+                    <button
+                      type="button"
+                      onClick={() => handleTogglePinPost(pinnedPost.id)}
+                      className="shrink-0 rounded-lg border border-amber-400/30 bg-amber-950/50 px-2.5 py-1 text-[11px] font-bold text-amber-200 hover:bg-amber-900/50"
+                    >
+                      Открепить
+                    </button>
+                  )}
+                </div>
+              )}
+
+              <div className="space-y-3.5">
+                {roomPosts.length === 0 ? (
+                  <div className="rounded-2xl border border-purple-500/20 bg-[#130926]/80 p-8 text-center text-sm text-purple-200/70">
+                    В канале #{activeRoom.name} пока нет постов. Напиши первый!
+                  </div>
+                ) : (
+                  roomPosts.map((post) => {
+                    const authorAcc = accountByHandle.get(safeLower(post.handle));
+                    const authorAvatar = authorAcc
+                      ? authorAcc.avatar
+                      : post.avatar || null;
+                    const authorName = authorAcc ? authorAcc.username : post.author;
+                    const isEditing = editingPostId === post.id;
+                    const canManage = canManageItem(post.handle);
+                    const hasEgg = hasEasterEggForPost(post.id);
+                    const commentDraft = commentInputs[post.id] || "";
+
+                    return (
+                      <article
+                        key={post.id}
+                        className="relative overflow-hidden rounded-2xl border border-purple-500/20 bg-[#130926]/90 p-4 space-y-3"
+                      >
+                        {hasEgg && <PostPeelUnderlay postId={post.id} />}
+                        {hasEgg && <PostCornerPeelHandle postId={post.id} />}
+
+                        <div className="flex items-start justify-between gap-2">
+                          <div className="flex items-center gap-2.5 min-w-0">
+                            <button
+                              type="button"
+                              onClick={() => handleOpenProfile(post.handle)}
+                              className="shrink-0"
+                            >
+                              <AvatarBadge
+                                name={authorName}
+                                src={authorAvatar}
+                                size="md"
+                                presence={authorAcc?.presence}
+                              />
+                            </button>
+                            <div className="min-w-0">
+                              <div className="flex flex-wrap items-center gap-1.5">
+                                <button
+                                  type="button"
+                                  onClick={() => handleOpenProfile(post.handle)}
+                                  className="text-sm font-extrabold text-white hover:text-pink-300 transition truncate"
+                                >
+                                  {authorName}
+                                </button>
+                                <VerifiedBadge account={authorAcc} size="sm" />
+                                <button
+                                  type="button"
+                                  onClick={() => handleOpenProfile(post.handle)}
+                                  className="text-xs font-semibold text-purple-200/70 hover:text-pink-200"
+                                >
+                                  {post.handle}
+                                </button>
+                                {post.pinned && (
+                                  <span className="inline-flex items-center gap-1 rounded-md border border-amber-400/35 bg-amber-950/50 px-1.5 py-0.5 text-[10px] font-bold text-amber-200">
+                                    <Pin className="h-2.5 w-2.5" />
+                                    <span>Закреп</span>
+                                  </span>
+                                )}
+                              </div>
+                              <div className="text-[11px] text-purple-200/60">
+                                {post.createdAt}
+                                {post.editedAt ? ` · ред. ${post.editedAt}` : ""}
+                              </div>
+                            </div>
+                          </div>
+
+                          <div className="flex items-center gap-1">
+                            {canManage && (
+                              <>
+                                <button
+                                  type="button"
+                                  onClick={() => handleTogglePinPost(post.id)}
+                                  title={post.pinned ? "Открепить" : "Закрепить"}
+                                  className={`rounded-lg p-1.5 text-xs transition ${
+                                    post.pinned
+                                      ? "bg-amber-500/20 text-amber-300"
+                                      : "text-purple-200/65 hover:bg-white/10 hover:text-white"
+                                  }`}
+                                >
+                                  <Pin className="h-3.5 w-3.5" />
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => handleStartEditPost(post)}
+                                  title="Редактировать пост"
+                                  className="rounded-lg p-1.5 text-purple-200/65 hover:bg-white/10 hover:text-white transition"
+                                >
+                                  <Edit3 className="h-3.5 w-3.5" />
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => handleDeletePost(post.id)}
+                                  title="Удалить пост"
+                                  className="rounded-lg p-1.5 text-purple-200/65 hover:bg-rose-950/60 hover:text-rose-300 transition"
+                                >
+                                  <Trash2 className="h-3.5 w-3.5" />
+                                </button>
+                              </>
+                            )}
+                          </div>
+                        </div>
+
+                        {isEditing ? (
+                          <div className="space-y-2">
+                            <textarea
+                              rows={3}
+                              value={editingPostText}
+                              onChange={(e) =>
+                                setEditingPostText(e.target.value)
+                              }
+                              className="w-full rounded-xl border border-purple-500/30 bg-[#090414] p-3 text-sm text-white focus:border-[#FF2A85] focus:outline-none"
+                            />
+                            <div className="flex justify-end gap-2">
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setEditingPostId(null);
+                                  setEditingPostText("");
+                                }}
+                                className="rounded-lg px-3 py-1 text-xs font-bold text-purple-200/75 hover:text-white"
+                              >
+                                Отмена
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => handleSaveEditPost(post.id)}
+                                className="rounded-lg bg-gradient-to-r from-[#9D4EDD] to-[#FF2A85] px-3 py-1 text-xs font-extrabold text-white"
+                              >
+                                Сохранить
+                              </button>
+                            </div>
+                          </div>
+                        ) : (
+                          post.text && (
+                            <p className="whitespace-pre-wrap break-words text-sm leading-relaxed text-[#F8F5FF]">
+                              <RichTextWithMentions
+                                text={post.text}
+                                knownHandles={knownCommunityHandles}
+                                currentUserHandle={currentUser.handle}
+                                onSelectHandle={handleOpenProfile}
+                              />
+                            </p>
+                          )
+                        )}
+
+                        {post.repostOf && (
+                          <div className="rounded-xl border border-purple-500/25 bg-[#090414]/75 p-3 space-y-1.5">
+                            <div className="flex items-center gap-1.5 text-xs font-bold text-pink-200">
+                              <Repeat className="h-3.5 w-3.5 text-fuchsia-400" />
+                              <span>
+                                {post.repostOf.author} ({post.repostOf.handle})
+                              </span>
+                              <span className="text-[11px] font-normal text-purple-200/60">
+                                · {post.repostOf.createdAt}
+                              </span>
+                            </div>
+                            {post.repostOf.text && (
+                              <p className="whitespace-pre-wrap break-words text-xs text-purple-100/90">
+                                {post.repostOf.text}
+                              </p>
+                            )}
+                            {post.repostOf.image && (
+                              <img
+                                src={post.repostOf.image}
+                                alt="Вложение репоста"
+                                onClick={() =>
+                                  setLightboxImage(post.repostOf?.image || null)
+                                }
+                                className="max-h-52 cursor-zoom-in rounded-lg border border-purple-500/20 object-cover"
+                              />
+                            )}
+                          </div>
+                        )}
+
+                        {post.image && (
+                          <div className="relative inline-block">
+                            <img
+                              src={post.image}
+                              alt="Вложение поста"
+                              onClick={() => setLightboxImage(post.image || null)}
+                              className="max-h-80 cursor-zoom-in rounded-xl border border-purple-500/25 object-cover"
+                            />
+                            <button
+                              type="button"
+                              onClick={() => setLightboxImage(post.image || null)}
+                              title="Открыть полностью"
+                              className="absolute bottom-2 right-2 rounded-lg bg-[#090414]/80 p-1.5 text-white hover:bg-[#090414]"
+                            >
+                              <Maximize2 className="h-3.5 w-3.5" />
+                            </button>
+                          </div>
+                        )}
+
+                        <div className="flex flex-wrap items-center justify-between gap-2 pt-1 border-t border-purple-500/15">
+                          <ReactionBar
+                            reactions={post.reactions}
+                            currentUserHandle={currentUser.handle}
+                            onToggle={(emoji) =>
+                              handleTogglePostReaction(post.id, emoji)
+                            }
+                          />
+
+                          <div className="flex items-center gap-2">
+                            <button
+                              type="button"
+                              onClick={() => handleToggleLike(post.id)}
+                              className={`inline-flex items-center gap-1 rounded-xl border px-2.5 py-1 text-xs font-bold transition ${
+                                post.likedByMe
+                                  ? "border-pink-400/50 bg-[#FF2A85]/25 text-pink-200"
+                                  : "border-purple-500/20 bg-white/5 text-purple-200/80 hover:border-pink-400/35 hover:text-white"
+                              }`}
+                            >
+                              <Heart
+                                className={`h-3.5 w-3.5 ${
+                                  post.likedByMe
+                                    ? "fill-[#FF2A85] text-[#FF2A85]"
+                                    : ""
+                                }`}
+                              />
+                              <span>{post.likes}</span>
+                            </button>
+
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setRepostTarget(post);
+                                setRepostNote("");
+                              }}
+                              className="inline-flex items-center gap-1 rounded-xl border border-purple-500/20 bg-white/5 px-2.5 py-1 text-xs font-bold text-purple-200/80 hover:border-pink-400/35 hover:text-white transition"
+                            >
+                              <Forward className="h-3.5 w-3.5" />
+                              <span>Репост</span>
+                            </button>
+                          </div>
+                        </div>
+
+                        <div className="space-y-2 pt-1">
+                          {(post.comments || []).map((c) => {
+                            const cAcc = accountByHandle.get(safeLower(c.handle));
+                            return (
+                              <div
+                                key={c.id}
+                                className="flex items-start gap-2 rounded-xl bg-[#090414]/65 px-3 py-2 text-xs"
+                              >
+                                <AvatarBadge
+                                  name={cAcc ? cAcc.username : c.author}
+                                  src={cAcc ? cAcc.avatar : c.avatar}
+                                  size="sm"
+                                />
+                                <div className="min-w-0 flex-1">
+                                  <div className="flex items-center gap-1.5">
+                                    <button
+                                      type="button"
+                                      onClick={() => handleOpenProfile(c.handle)}
+                                      className="font-bold text-white hover:text-pink-300"
+                                    >
+                                      {cAcc ? cAcc.username : c.author}
+                                    </button>
+                                    <span className="text-[11px] text-purple-200/60">
+                                      {c.handle} · {c.createdAt}
+                                    </span>
+                                  </div>
+                                  <p className="mt-0.5 text-purple-100/90 break-words">
+                                    <RichTextWithMentions
+                                      text={c.text}
+                                      knownHandles={knownCommunityHandles}
+                                      currentUserHandle={currentUser.handle}
+                                      onSelectHandle={handleOpenProfile}
+                                    />
+                                  </p>
+                                </div>
+                              </div>
+                            );
+                          })}
+
+                          <form
+                            onSubmit={(e) => handleAddComment(post.id, e)}
+                            className="flex items-center gap-2"
+                          >
+                            <MessageSquare className="h-3.5 w-3.5 shrink-0 text-purple-300/60" />
+                            <input
+                              type="text"
+                              value={commentDraft}
+                              onChange={(e) =>
+                                setCommentInputs((prev) => ({
+                                  ...prev,
+                                  [post.id]: e.target.value,
+                                }))
+                              }
+                              placeholder="Написать комментарий..."
+                              className="flex-1 rounded-xl border border-purple-500/20 bg-[#090414] px-3 py-1.5 text-xs text-white placeholder-purple-300/40 focus:border-[#FF2A85] focus:outline-none"
+                            />
+                            <button
+                              type="submit"
+                              className="rounded-xl bg-white/10 px-3 py-1.5 text-xs font-bold text-white hover:bg-[#FF2A85]/35 transition"
+                            >
+                              Ответить
+                            </button>
+                          </form>
+                        </div>
+                      </article>
+                    );
+                  })
+                )}
+              </div>
+            </>
+          )}
+
+          {activeTab === "chat" && (
+            <div className="rounded-2xl border border-purple-500/20 bg-[#130926]/90 p-4 flex flex-col min-h-[520px]">
+              <div className="flex items-center justify-between border-b border-purple-500/15 pb-3 mb-3">
+                <div>
+                  <h2 className="text-sm font-black text-white">
+                    Чат канала #{activeRoom.name}
+                  </h2>
+                  <p className="text-xs text-purple-200/70">
+                    {activeRoom.topic}
+                  </p>
+                </div>
+              </div>
+
+              {pinnedMessage && (
+                <div className="mb-3 rounded-xl border border-amber-400/35 bg-amber-950/20 px-3 py-2 flex items-center justify-between gap-2 text-xs">
+                  <div className="min-w-0">
+                    <span className="font-extrabold text-amber-300">
+                      Закреплено ({pinnedMessage.handle}):{" "}
+                    </span>
+                    <span className="text-amber-50/90">
+                      {pinnedMessage.text}
+                    </span>
+                  </div>
+                  {canManageItem(pinnedMessage.handle) && (
+                    <button
+                      type="button"
+                      onClick={() => handleTogglePinMessage(pinnedMessage.id)}
+                      className="shrink-0 text-[11px] font-bold text-amber-200 hover:underline"
+                    >
+                      Открепить
+                    </button>
+                  )}
+                </div>
+              )}
+
+              <div className="flex-1 space-y-2.5 overflow-y-auto pr-1 max-h-[420px]">
+                {roomMessages.map((msg) => {
+                  const senderAcc = accountByHandle.get(safeLower(msg.handle));
+                  const isEditing = editingMessageId === msg.id;
+                  const canManage = canManageItem(msg.handle);
+                  const mentionsMe = textMentionsHandle(
+                    msg.text,
+                    currentUser.handle
+                  );
+
+                  return (
+                    <div
+                      key={msg.id}
+                      className={`rounded-xl border px-3 py-2.5 space-y-1.5 ${
+                        mentionsMe
+                          ? "border-pink-400/45 bg-[#FF2A85]/10"
+                          : "border-purple-500/15 bg-[#090414]/75"
+                      }`}
+                    >
+                      <div className="flex items-center justify-between gap-2">
+                        <div className="flex items-center gap-2 min-w-0">
+                          <AvatarBadge
+                            name={senderAcc ? senderAcc.username : msg.author}
+                            src={senderAcc ? senderAcc.avatar : msg.avatar}
+                            size="sm"
+                            presence={senderAcc?.presence}
+                          />
+                          <button
+                            type="button"
+                            onClick={() => handleOpenProfile(msg.handle)}
+                            className="text-xs font-extrabold text-white hover:text-pink-300 truncate"
+                          >
+                            {senderAcc ? senderAcc.username : msg.author}
+                          </button>
+                          <VerifiedBadge account={senderAcc} size="sm" />
+                          <span className="text-[11px] text-purple-200/60">
+                            {msg.handle} · {msg.createdAt}
+                            {msg.editedAt ? ` · ред. ${msg.editedAt}` : ""}
+                          </span>
+                        </div>
+
+                        {canManage && (
+                          <div className="flex items-center gap-1">
+                            <button
+                              type="button"
+                              onClick={() => handleTogglePinMessage(msg.id)}
+                              title="Закрепить сообщение"
+                              className="rounded p-1 text-purple-200/60 hover:bg-white/10 hover:text-amber-300"
+                            >
+                              <Pin className="h-3 w-3" />
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => handleStartEditMessage(msg)}
+                              title="Редактировать"
+                              className="rounded p-1 text-purple-200/60 hover:bg-white/10 hover:text-white"
+                            >
+                              <Pencil className="h-3 w-3" />
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => handleDeleteMessage(msg.id)}
+                              title="Удалить"
+                              className="rounded p-1 text-purple-200/60 hover:bg-rose-950/60 hover:text-rose-300"
+                            >
+                              <Trash2 className="h-3 w-3" />
+                            </button>
+                          </div>
+                        )}
+                      </div>
+
+                      {isEditing ? (
+                        <div className="flex items-center gap-2 pt-1">
+                          <input
+                            type="text"
+                            value={editingMessageText}
+                            onChange={(e) =>
+                              setEditingMessageText(e.target.value)
+                            }
+                            className="flex-1 rounded-lg border border-purple-500/30 bg-[#130926] px-2.5 py-1 text-xs text-white focus:border-[#FF2A85] focus:outline-none"
+                          />
+                          <button
+                            type="button"
+                            onClick={() => handleSaveEditMessage(msg.id)}
+                            className="rounded-lg bg-gradient-to-r from-[#9D4EDD] to-[#FF2A85] px-2.5 py-1 text-xs font-bold text-white"
+                          >
+                            Сохранить
+                          </button>
+                        </div>
+                      ) : (
+                        <p className="text-sm text-[#F8F5FF] break-words">
+                          <RichTextWithMentions
+                            text={msg.text}
+                            knownHandles={knownCommunityHandles}
+                            currentUserHandle={currentUser.handle}
+                            onSelectHandle={handleOpenProfile}
+                          />
+                        </p>
+                      )}
+
+                      <ReactionBar
+                        reactions={msg.reactions}
+                        currentUserHandle={currentUser.handle}
+                        onToggle={(emoji) =>
+                          handleToggleMessageReaction(msg.id, emoji)
+                        }
+                      />
+                    </div>
+                  );
+                })}
+                <div ref={chatEndRef} />
+              </div>
+
+              <form
+                onSubmit={handleSendChat}
+                className="mt-3 flex items-center gap-2 border-t border-purple-500/15 pt-3"
+              >
+                <input
+                  type="text"
+                  value={chatText}
+                  onChange={(e) => setChatText(e.target.value)}
+                  placeholder={`Сообщение в #${activeRoom.name}...`}
+                  className="flex-1 rounded-xl border border-purple-500/25 bg-[#090414] px-3.5 py-2.5 text-sm text-white placeholder-purple-300/40 focus:border-[#FF2A85] focus:outline-none"
+                />
+                <button
+                  type="submit"
+                  className="inline-flex items-center gap-1.5 rounded-xl bg-gradient-to-r from-[#9D4EDD] to-[#FF2A85] px-4 py-2.5 text-xs font-extrabold text-white hover:opacity-95 transition"
+                >
+                  <Send className="h-3.5 w-3.5" />
+                  <span>Отправить</span>
+                </button>
+              </form>
+            </div>
+          )}
+
+          {activeTab === "friends" && (
+            <div className="space-y-4">
+              <div className="rounded-2xl border border-purple-500/20 bg-[#130926]/90 p-4 space-y-3">
+                <h2 className="text-base font-black text-white">
+                  Добавить друга по @handle
+                </h2>
+                <div className="flex flex-col sm:flex-row gap-2">
+                  <input
+                    type="text"
+                    value={friendHandleInput}
+                    onChange={(e) => setFriendHandleInput(e.target.value)}
+                    placeholder="@handle пользователя"
+                    className="flex-1 rounded-xl border border-purple-500/25 bg-[#090414] px-3.5 py-2 text-sm text-white placeholder-purple-300/40 focus:border-[#FF2A85] focus:outline-none"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => handleAddFriend()}
+                    className="inline-flex items-center justify-center gap-1.5 rounded-xl bg-gradient-to-r from-[#9D4EDD] to-[#FF2A85] px-4 py-2 text-xs font-extrabold text-white"
+                  >
+                    <UserPlus className="h-4 w-4" />
+                    <span>Добавить</span>
+                  </button>
+                </div>
+                {friendMessage && (
+                  <p className="text-xs font-semibold text-pink-200">
+                    {friendMessage}
+                  </p>
+                )}
+              </div>
+
+              <div className="rounded-2xl border border-purple-500/20 bg-[#130926]/90 p-4 space-y-3">
+                <h3 className="text-sm font-black text-white">
+                  Мои друзья ({friendsList.length})
+                </h3>
+                {friendsList.length === 0 ? (
+                  <p className="text-xs text-purple-200/70">
+                    Пока никого нет в друзьях. Добавь участника по @handle или из
+                    списка ниже.
+                  </p>
+                ) : (
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                    {friendsList.map((fr) => (
+                      <div
+                        key={fr.id}
+                        className="flex items-center justify-between gap-2 rounded-xl border border-purple-500/20 bg-[#090414]/75 p-3"
+                      >
+                        <button
+                          type="button"
+                          onClick={() => handleOpenProfile(fr.handle)}
+                          className="flex items-center gap-2.5 min-w-0 text-left"
+                        >
+                          <AvatarBadge
+                            name={fr.username}
+                            src={fr.avatar}
+                            size="md"
+                            presence={fr.presence}
+                          />
+                          <div className="min-w-0">
+                            <div className="flex items-center gap-1 text-xs font-extrabold text-white truncate">
+                              <span className="truncate">{fr.username}</span>
+                              <VerifiedBadge account={fr} size="sm" />
+                            </div>
+                            <div className="text-[11px] text-purple-200/70 truncate">
+                              {fr.handle} · {fr.mood || "В сети"}
+                            </div>
+                          </div>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleRemoveFriend(fr.handle)}
+                          title="Удалить из друзей"
+                          className="rounded-lg p-1.5 text-purple-200/65 hover:bg-rose-950/60 hover:text-rose-300"
+                        >
+                          <UserMinus className="h-4 w-4" />
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              {suggestedAccounts.length > 0 && (
+                <div className="rounded-2xl border border-purple-500/20 bg-[#130926]/90 p-4 space-y-3">
+                  <h3 className="text-sm font-black text-white">
+                    Участники орбиты
+                  </h3>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                    {suggestedAccounts.map((acc) => (
+                      <div
+                        key={acc.id}
+                        className="flex items-center justify-between gap-2 rounded-xl border border-purple-500/20 bg-[#090414]/75 p-3"
+                      >
+                        <button
+                          type="button"
+                          onClick={() => handleOpenProfile(acc.handle)}
+                          className="flex items-center gap-2.5 min-w-0 text-left"
+                        >
+                          <AvatarBadge
+                            name={acc.username}
+                            src={acc.avatar}
+                            size="md"
+                            presence={acc.presence}
+                          />
+                          <div className="min-w-0">
+                            <div className="flex items-center gap-1 text-xs font-extrabold text-white truncate">
+                              <span className="truncate">{acc.username}</span>
+                              <VerifiedBadge account={acc} size="sm" />
+                            </div>
+                            <div className="text-[11px] text-purple-200/70 truncate">
+                              {acc.handle}
+                            </div>
+                          </div>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleAddFriend(acc.handle)}
+                          className="inline-flex items-center gap-1 rounded-lg border border-fuchsia-500/35 bg-[#9D4EDD]/20 px-2.5 py-1.5 text-[11px] font-bold text-pink-200 hover:bg-[#9D4EDD]/35"
+                        >
+                          <UserPlus className="h-3.5 w-3.5" />
+                          <span>В друзья</span>
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+
+          {activeTab === "profile" && (
+            <form
+              onSubmit={handleSaveProfile}
+              className="rounded-2xl border border-purple-500/20 bg-[#130926]/90 overflow-hidden"
+            >
+              <div
+                className="relative h-36 w-full bg-cover bg-center"
+                style={
+                  profileBanner?.startsWith("data:")
+                    ? { backgroundImage: `url(${profileBanner})` }
+                    : {
+                        background:
+                          profileBanner || BANNER_PRESETS[0].gradient,
+                      }
+                }
+              >
+                <div className="absolute inset-0 bg-gradient-to-t from-[#130926] via-transparent to-black/25" />
+                <div className="absolute top-3 right-3 flex items-center gap-2">
+                  <input
+                    ref={bannerInputRef}
+                    type="file"
+                    accept="image/*"
+                    onChange={handleBannerUpload}
+                    className="hidden"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => bannerInputRef.current?.click()}
+                    className="inline-flex items-center gap-1.5 rounded-xl border border-white/20 bg-[#090414]/75 px-3 py-1.5 text-xs font-bold text-white backdrop-blur hover:bg-[#090414]"
+                  >
+                    <ImageIcon className="h-3.5 w-3.5 text-pink-300" />
+                    <span>Своя шапка</span>
+                  </button>
+                </div>
+              </div>
+
+              <div className="p-5 space-y-5">
+                <div className="flex flex-wrap items-end justify-between gap-4 -mt-12">
+                  <div className="flex items-end gap-3.5">
+                    <div className="relative">
+                      <AvatarBadge
+                        name={profileUsername || currentUser.username}
+                        src={profileAvatar}
+                        size="lg"
+                        presence={profilePresence}
+                      />
+                      <input
+                        ref={avatarInputRef}
+                        type="file"
+                        accept="image/*"
+                        onChange={handleAvatarUpload}
+                        className="hidden"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => avatarInputRef.current?.click()}
+                        title="Загрузить аватарку"
+                        className="absolute -bottom-1 -right-1 rounded-full border border-white/25 bg-[#9D4EDD] p-1.5 text-white shadow hover:bg-[#FF2A85] transition"
+                      >
+                        <Camera className="h-3.5 w-3.5" />
+                      </button>
+                    </div>
+                    <div className="pb-1">
+                      <div className="flex items-center gap-1.5">
+                        <h2 className="text-lg font-black text-white">
+                          {profileUsername || currentUser.username}
+                        </h2>
+                        <VerifiedBadge account={currentUser} size="md" />
+                      </div>
+                      <div className="text-xs text-purple-200/75">
+                        {currentUser.handle} ·{" "}
+                        {accountBadgeLabel(currentUser.accountType)} ·{" "}
+                        {formatSubscribers(currentUser.subscribers)} подписчиков
+                      </div>
+                    </div>
+                  </div>
+
+                  {profileAvatar && (
+                    <button
+                      type="button"
+                      onClick={() => setProfileAvatar(null)}
+                      className="rounded-xl border border-purple-500/25 bg-white/5 px-3 py-1.5 text-xs font-bold text-purple-200/80 hover:text-white"
+                    >
+                      Убрать аватарку
+                    </button>
+                  )}
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold text-purple-200/85 mb-2">
+                    Готовые градиенты шапки
+                  </label>
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                    {BANNER_PRESETS.map((preset) => (
+                      <button
+                        key={preset.id}
+                        type="button"
+                        onClick={() => setProfileBanner(preset.gradient)}
+                        className={`rounded-xl border p-2 text-left text-[11px] font-bold text-white transition ${
+                          profileBanner === preset.gradient
+                            ? "border-pink-400 ring-2 ring-pink-400/30"
+                            : "border-purple-500/20 opacity-85 hover:opacity-100"
+                        }`}
+                        style={{ background: preset.gradient }}
+                      >
+                        {preset.label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-xs font-bold text-purple-200/85 mb-1">
+                      Отображаемое имя
+                    </label>
+                    <input
+                      type="text"
+                      value={profileUsername}
+                      onChange={(e) => setProfileUsername(e.target.value)}
+                      className="w-full rounded-xl border border-purple-500/25 bg-[#090414] px-3.5 py-2 text-sm text-white focus:border-[#FF2A85] focus:outline-none"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-bold text-purple-200/85 mb-1">
+                      Статус присутствия
+                    </label>
+                    <select
+                      value={profilePresence}
+                      onChange={(e) =>
+                        setProfilePresence(e.target.value as PresenceKind)
+                      }
+                      className="w-full rounded-xl border border-purple-500/25 bg-[#090414] px-3.5 py-2 text-sm text-white focus:border-[#FF2A85] focus:outline-none"
+                    >
+                      <option value="online">Онлайн</option>
+                      <option value="building">В сборке</option>
+                      <option value="orbit">На орбите</option>
+                    </select>
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold text-purple-200/85 mb-1">
+                    Текущее настроение / активность
+                  </label>
+                  <input
+                    type="text"
+                    value={profileMood}
+                    onChange={(e) => setProfileMood(e.target.value)}
+                    placeholder="Например: Собираю новый релиз"
+                    className="w-full rounded-xl border border-purple-500/25 bg-[#090414] px-3.5 py-2 text-sm text-white placeholder-purple-300/40 focus:border-[#FF2A85] focus:outline-none"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold text-purple-200/85 mb-1">
+                    О себе
+                  </label>
+                  <textarea
+                    rows={3}
+                    value={profileBio}
+                    onChange={(e) => setProfileBio(e.target.value)}
+                    placeholder="Расскажи коротко о себе..."
+                    className="w-full rounded-xl border border-purple-500/25 bg-[#090414] px-3.5 py-2 text-sm text-white placeholder-purple-300/40 focus:border-[#FF2A85] focus:outline-none"
+                  />
+                </div>
+
+                <div>
+                  <label className="flex items-center gap-1.5 text-xs font-bold text-purple-200/85 mb-1">
+                    <KeyRound className="h-3.5 w-3.5 text-pink-300" />
+                    <span>Новый пароль (оставь пустым, если не меняешь)</span>
+                  </label>
+                  <input
+                    type="password"
+                    value={profileNewPassword}
+                    onChange={(e) => setProfileNewPassword(e.target.value)}
+                    placeholder="Новый пароль (мин. 4 символа)"
+                    className="w-full rounded-xl border border-purple-500/25 bg-[#090414] px-3.5 py-2 text-sm text-white placeholder-purple-300/40 focus:border-[#FF2A85] focus:outline-none"
+                  />
+                </div>
+
+                {profileError && (
+                  <p className="text-xs font-semibold text-pink-300">
+                    {profileError}
+                  </p>
+                )}
+
+                {profileSaved && (
+                  <p className="text-xs font-bold text-emerald-300">
+                    Изменения профиля сохранены!
+                  </p>
+                )}
+
+                <div className="flex justify-end">
+                  <button
+                    type="submit"
+                    className="inline-flex items-center gap-1.5 rounded-xl bg-gradient-to-r from-[#9D4EDD] to-[#FF2A85] px-5 py-2.5 text-xs font-extrabold text-white shadow-md hover:opacity-95 transition"
+                  >
+                    <Save className="h-4 w-4" />
+                    <span>Сохранить профиль</span>
+                  </button>
+                </div>
+              </div>
+            </form>
+          )}
+        </main>
+      </div>
+
+      {showAddAccountModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 p-4 backdrop-blur-sm">
+          <div className="w-full max-w-md rounded-2xl border border-purple-500/30 bg-[#130926] p-5 shadow-2xl space-y-4">
+            <div className="flex items-center justify-between">
+              <h3 className="text-base font-black text-white">
+                Переключение или создание аккаунта
+              </h3>
+              <button
+                type="button"
+                onClick={() => setShowAddAccountModal(false)}
+                className="rounded-lg p-1 text-purple-200/70 hover:bg-white/10 hover:text-white"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+
+            {otherAccounts.length > 0 && (
+              <div className="space-y-1.5">
+                <div className="text-[11px] font-bold uppercase tracking-wider text-purple-200/70">
+                  Быстрый вход в существующий аккаунт
+                </div>
+                <div className="max-h-36 overflow-y-auto space-y-1.5">
+                  {otherAccounts.map((acc) => (
+                    <button
+                      key={acc.id}
+                      type="button"
+                      onClick={() => {
+                        handleQuickSwitchAccount(acc.id);
+                        setShowAddAccountModal(false);
+                      }}
+                      className="flex w-full items-center justify-between rounded-xl border border-purple-500/20 bg-[#090414]/80 px-3 py-2 text-left hover:border-pink-400/40 transition"
+                    >
+                      <div className="flex items-center gap-2 min-w-0">
                         <AvatarBadge
                           name={acc.username}
                           src={acc.avatar}
                           size="sm"
                           presence={acc.presence}
                         />
-                        <span className="max-w-[90px] truncate">{acc.handle}</span>
-                        <VerifiedBadge account={acc} size="sm" />
-                      </button>
-                    );
-                  })}
+                        <div className="min-w-0">
+                          <div className="flex items-center gap-1 text-xs font-bold text-white truncate">
+                            <span className="truncate">{acc.username}</span>
+                            <VerifiedBadge account={acc} size="sm" />
+                          </div>
+                          <div className="text-[10px] text-purple-200/65">
+                            {acc.handle}
+                          </div>
+                        </div>
+                      </div>
+                      <UserCheck className="h-4 w-4 shrink-0 text-pink-300" />
+                    </button>
+                  ))}
                 </div>
-              )}
-
-              <button
-                type="button"
-                onClick={() => {
-                  setAddAccError(null);
-                  setAddAccSuggestion(null);
-                  setShowAddAccountModal((v) => !v);
-                }}
-                className="inline-flex items-center gap-1 rounded-xl border border-pink-400/40 bg-[#24103B] px-3 py-1.5 text-xs font-bold text-pink-200 hover:bg-[#331552]"
-              >
-                <UserPlus className="h-3.5 w-3.5" />
-                + Личный аккаунт
-              </button>
-
-              <button
-                type="button"
-                onClick={() => {
-                  setInspectedHandle(null);
-                  setActiveTab("profile");
-                }}
-                className="flex items-center gap-2 rounded-xl border border-fuchsia-500/30 bg-[#140D2B] px-2.5 py-1 text-xs hover:border-pink-400/70 transition"
-              >
-                <AvatarBadge
-                  name={currentUser.username}
-                  src={currentUser.avatar}
-                  size="sm"
-                  presence={currentUser.presence}
-                />
-                <span className="font-bold text-white">{currentUser.username}</span>
-                <VerifiedBadge account={currentUser} size="sm" />
-                <span className="text-pink-300">{currentUser.handle}</span>
-                <span className="rounded bg-white/10 px-1.5 py-0.5 text-[10px] font-bold text-pink-200">
-                  {accountBadgeLabel(currentUser.accountType)}
-                </span>
-              </button>
-
-              <button
-                type="button"
-                onClick={handleLogout}
-                className="inline-flex items-center gap-1.5 rounded-xl border border-rose-500/35 bg-[#240B20] px-3 py-1.5 text-xs font-bold text-rose-200 hover:bg-[#36102F]"
-              >
-                <LogOut className="h-3.5 w-3.5" />
-                Выйти
-              </button>
-            </div>
-          ) : (
-            <div className="flex items-center gap-2 text-xs">
-              <button
-                type="button"
-                onClick={() => {
-                  setAuthMode("login");
-                  setAuthError(null);
-                  setAuthSuggestion(null);
-                }}
-                className={`rounded-xl px-3.5 py-1.5 font-bold transition ${
-                  authMode === "login"
-                    ? "bg-gradient-to-r from-[#9D4EDD] to-[#FF2A85] text-white"
-                    : "border border-purple-500/30 bg-[#140D2B] text-purple-200 hover:text-white"
-                }`}
-              >
-                Войти
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  setAuthMode("register");
-                  setAuthError(null);
-                  setAuthSuggestion(null);
-                }}
-                className={`rounded-xl px-3.5 py-1.5 font-bold transition ${
-                  authMode === "register"
-                    ? "bg-gradient-to-r from-[#9D4EDD] to-[#FF2A85] text-white"
-                    : "border border-purple-500/30 bg-[#140D2B] text-purple-200 hover:text-white"
-                }`}
-              >
-                Создать аккаунт
-              </button>
-            </div>
-          )}
-        </header>
-
-        {/* Панель активного голосового звонка */}
-        {currentUser && (inVoiceCall || voiceError) && (
-          <section className="rounded-2xl border border-emerald-400/35 bg-[#120D29]/95 p-4 space-y-3 shadow-lg">
-            <div className="flex flex-wrap items-center justify-between gap-3">
-              <div className="flex items-center gap-2.5">
-                <span
-                  className={`flex h-9 w-9 items-center justify-center rounded-xl ${
-                    inVoiceCall
-                      ? "bg-emerald-500/20 text-emerald-300"
-                      : "bg-rose-500/20 text-rose-300"
-                  }`}
-                >
-                  <PhoneCall className="h-4 w-4" />
-                </span>
-                <div>
-                  <div className="flex flex-wrap items-center gap-2 text-sm font-extrabold text-white">
-                    <span>
-                      {inVoiceCall
-                        ? `Голосовой эфир в #${voiceRoom.name}`
-                        : "Голосовой чат"}
-                    </span>
-                    {inVoiceCall && (
-                      <span className="rounded-full bg-emerald-500/15 px-2.5 py-0.5 text-xs font-bold text-emerald-300">
-                        {formatCallDuration(callSeconds)}
-                      </span>
-                    )}
-                    <span className="text-xs font-semibold text-pink-300">
-                      Собеседников в эфире: {remotePeerList.length}
-                    </span>
-                  </div>
-                  {voiceStatus && (
-                    <p className="text-xs text-purple-200/75">{voiceStatus}</p>
-                  )}
-                </div>
-              </div>
-
-              {inVoiceCall && (
-                <div className="flex flex-wrap items-center gap-2">
-                  <button
-                    type="button"
-                    onClick={() => setMicEnabled((m) => !m)}
-                    className={`inline-flex items-center gap-1.5 rounded-xl border px-3 py-1.5 text-xs font-bold transition ${
-                      micEnabled
-                        ? "border-emerald-400/35 bg-emerald-950/40 text-emerald-200 hover:bg-emerald-900/50"
-                        : "border-amber-400/40 bg-amber-950/50 text-amber-200"
-                    }`}
-                  >
-                    {micEnabled ? (
-                      <>
-                        <Mic className="h-3.5 w-3.5" />
-                        Микрофон вкл
-                      </>
-                    ) : (
-                      <>
-                        <MicOff className="h-3.5 w-3.5" />
-                        Микрофон выкл
-                      </>
-                    )}
-                  </button>
-
-                  <button
-                    type="button"
-                    onClick={() => setSpeakerMuted((s) => !s)}
-                    className={`inline-flex items-center gap-1.5 rounded-xl border px-3 py-1.5 text-xs font-bold transition ${
-                      !speakerMuted
-                        ? "border-purple-500/35 bg-[#1C123B] text-purple-100 hover:border-pink-400/50"
-                        : "border-rose-400/40 bg-rose-950/50 text-rose-200"
-                    }`}
-                  >
-                    {!speakerMuted ? (
-                      <>
-                        <Volume2 className="h-3.5 w-3.5 text-pink-300" />
-                        Звук вкл
-                      </>
-                    ) : (
-                      <>
-                        <VolumeX className="h-3.5 w-3.5" />
-                        Звук выкл
-                      </>
-                    )}
-                  </button>
-
-                  <button
-                    type="button"
-                    onClick={handleToggleSelfMonitor}
-                    className={`rounded-xl border px-3 py-1.5 text-xs font-bold transition ${
-                      selfMonitor
-                        ? "border-pink-400/50 bg-[#FF2A85]/25 text-white"
-                        : "border-purple-500/30 bg-[#090414] text-purple-200/80 hover:text-white"
-                    }`}
-                  >
-                    {selfMonitor ? "Слышу себя: да" : "Прослушать себя"}
-                  </button>
-
-                  <button
-                    type="button"
-                    onClick={() => cleanupVoiceSession(true)}
-                    className="inline-flex items-center gap-1.5 rounded-xl bg-rose-600 px-3.5 py-1.5 text-xs font-extrabold text-white hover:bg-rose-500"
-                  >
-                    <PhoneOff className="h-3.5 w-3.5" />
-                    Выйти
-                  </button>
-                </div>
-              )}
-            </div>
-
-            {voiceError && (
-              <div className="rounded-xl border border-rose-500/40 bg-rose-950/50 px-3.5 py-2 text-xs font-semibold text-rose-200">
-                {voiceError}
               </div>
             )}
 
-            {inVoiceCall && (
-              <div className="grid gap-3 md:grid-cols-2">
-                <div className="rounded-xl border border-purple-500/25 bg-[#090414]/90 p-3 space-y-2">
-                  <div className="flex items-center justify-between text-xs">
-                    <span className="font-bold text-pink-200">
-                      Уровень микрофона ({currentUser.username})
-                    </span>
-                    <span className="text-purple-300/75">
-                      {!micEnabled
-                        ? "Заглушён"
-                        : voiceLevel > 12
-                        ? "Говорит"
-                        : "Тишина"}
-                    </span>
-                  </div>
-                  <VoiceLevelBar level={micEnabled ? voiceLevel : 0} />
-
-                  {remotePeerList.length > 0 && (
-                    <div className="border-t border-purple-500/15 pt-2 space-y-1.5">
-                      <div className="text-[11px] font-bold text-purple-300/75">
-                        Подключённые собеседники:
-                      </div>
-                      {remotePeerList.map((peer) => (
-                        <div
-                          key={peer.peerId}
-                          className="flex items-center justify-between rounded-lg bg-[#140D2B] px-2.5 py-1.5 text-xs"
-                        >
-                          <span className="font-bold text-white">
-                            {peer.username}{" "}
-                            <span className="text-pink-300">{peer.handle}</span>
-                          </span>
-                          <span className="text-[11px] text-emerald-300">
-                            {speakerMuted ? "Звук выкл" : "Аудио идёт"}
-                          </span>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </div>
-
-                <details className="rounded-xl border border-purple-500/25 bg-[#090414]/90 p-3 text-xs">
-                  <summary className="cursor-pointer font-bold text-pink-200">
-                    Звонок с другого устройства / браузера (SDP)
-                  </summary>
-                  <div className="mt-2.5 space-y-2">
-                    <button
-                      type="button"
-                      onClick={handleGenerateManualInvite}
-                      className="rounded-lg bg-[#FF2A85]/25 px-3 py-1.5 text-xs font-bold text-pink-200 hover:bg-[#FF2A85]/40"
-                    >
-                      Создать код приглашения
-                    </button>
-
-                    {manualOfferText && (
-                      <div className="space-y-1.5">
-                        <div className="flex items-center justify-between">
-                          <span className="text-[11px] text-purple-300/80">
-                            Код приглашения:
-                          </span>
-                          <button
-                            type="button"
-                            onClick={handleCopyOfferText}
-                            className="inline-flex items-center gap-1 rounded bg-white/10 px-2 py-0.5 text-[11px] font-semibold text-white hover:bg-white/15"
-                          >
-                            {copiedOffer ? (
-                              <>
-                                <Check className="h-3 w-3 text-emerald-300" />
-                                Скопировано
-                              </>
-                            ) : (
-                              <>
-                                <Copy className="h-3 w-3" />
-                                Копировать
-                              </>
-                            )}
-                          </button>
-                        </div>
-                        <textarea
-                          readOnly
-                          rows={2}
-                          value={manualOfferText}
-                          className="w-full rounded-lg border border-purple-500/25 bg-[#140D2B] p-2 text-[11px] text-purple-100 outline-none"
-                        />
-                      </div>
-                    )}
-
-                    <div className="flex gap-2">
-                      <input
-                        type="text"
-                        value={manualAnswerInput}
-                        onChange={(e) => setManualAnswerInput(e.target.value)}
-                        placeholder="Вставь JSON-ответ собеседника..."
-                        className="flex-1 rounded-lg border border-purple-500/25 bg-[#140D2B] px-2.5 py-1.5 text-xs text-white placeholder-purple-300/35 outline-none"
-                      />
-                      <button
-                        type="button"
-                        onClick={handleApplyManualAnswer}
-                        className="rounded-lg bg-gradient-to-r from-[#9D4EDD] to-[#FF2A85] px-3 py-1.5 text-xs font-bold text-white"
-                      >
-                        Соединить
-                      </button>
-                    </div>
-                  </div>
-                </details>
-              </div>
-            )}
-          </section>
-        )}
-
-        {/* Блок добавления дополнительного личного аккаунта без выхода */}
-        {currentUser && showAddAccountModal && (
-          <section className="rounded-2xl border border-pink-400/35 bg-[#140D2B]/95 p-5 space-y-4">
-            <div className="flex items-center justify-between gap-2">
-              <div>
-                <h3 className="text-sm font-extrabold uppercase tracking-wider text-pink-300">
-                  Добавить личный аккаунт
-                </h3>
-                <p className="text-xs text-purple-200/75">
-                  Регистрация доступна только для личных аккаунтов.
-                </p>
-              </div>
-              <button
-                type="button"
-                onClick={() => setShowAddAccountModal(false)}
-                className="rounded-lg p-1.5 text-purple-300 hover:bg-white/10 hover:text-white"
-              >
-                <X className="h-4 w-4" />
-              </button>
-            </div>
-
-            {addAccError && (
-              <div className="rounded-xl border border-rose-500/40 bg-rose-950/50 px-3.5 py-2.5 text-xs font-semibold text-rose-200 space-y-2">
-                <div>{addAccError}</div>
-                {addAccSuggestion && (
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setAddAccEmail(addAccSuggestion);
-                      setAddAccError(null);
-                      setAddAccSuggestion(null);
-                    }}
-                    className="rounded-lg bg-white/10 px-2.5 py-1 text-[11px] font-bold text-pink-200 hover:bg-white/20"
-                  >
-                    Использовать {addAccSuggestion}
-                  </button>
-                )}
-              </div>
-            )}
-
-            <form onSubmit={handleCreateExtraAccount} className="space-y-3.5">
-              <div className="grid gap-3 sm:grid-cols-3">
-                <label className="block space-y-1 text-xs">
-                  <span className="font-bold text-pink-200">Имя</span>
-                  <input
-                    type="text"
-                    value={addAccUsername}
-                    onChange={(e) => setAddAccUsername(e.target.value)}
-                    placeholder="Имя аккаунта"
-                    maxLength={28}
-                    className="w-full rounded-xl border border-purple-500/30 bg-[#090414] px-3 py-2 text-sm text-white placeholder-purple-300/35 outline-none focus:border-pink-400/70"
-                  />
-                </label>
-
-                <label className="block space-y-1 text-xs">
-                  <span className="font-bold text-pink-200">Хэндл (@handle)</span>
-                  <input
-                    type="text"
-                    value={addAccHandle}
-                    onChange={(e) => setAddAccHandle(e.target.value)}
-                    placeholder="@personal_handle"
-                    maxLength={20}
-                    className="w-full rounded-xl border border-purple-500/30 bg-[#090414] px-3 py-2 text-sm text-white placeholder-purple-300/35 outline-none focus:border-pink-400/70"
-                  />
-                </label>
-
-                <label className="block space-y-1 text-xs">
-                  <span className="font-bold text-pink-200">Email</span>
-                  <input
-                    type="email"
-                    value={addAccEmail}
-                    onChange={(e) => {
-                      setAddAccEmail(e.target.value);
-                      if (addAccSuggestion) setAddAccSuggestion(null);
-                    }}
-                    placeholder="second@example.com"
-                    className="w-full rounded-xl border border-purple-500/30 bg-[#090414] px-3 py-2 text-sm text-white placeholder-purple-300/35 outline-none focus:border-pink-400/70"
-                  />
-                </label>
+            <form
+              onSubmit={handleAddAnotherAccount}
+              className="space-y-2.5 border-t border-purple-500/20 pt-3"
+            >
+              <div className="text-[11px] font-bold uppercase tracking-wider text-purple-200/70">
+                Создать новый аккаунт
               </div>
 
-              <div className="grid gap-3 sm:grid-cols-2">
-                <label className="block space-y-1 text-xs">
-                  <span className="font-bold text-pink-200">Пароль</span>
-                  <input
-                    type="password"
-                    value={addAccPassword}
-                    onChange={(e) => setAddAccPassword(e.target.value)}
-                    placeholder="Минимум 6 символов"
-                    className="w-full rounded-xl border border-purple-500/30 bg-[#090414] px-3 py-2 text-sm text-white placeholder-purple-300/35 outline-none focus:border-pink-400/70"
-                  />
-                </label>
-
-                <label className="block space-y-1 text-xs">
-                  <span className="font-bold text-pink-200">Повтор пароля</span>
-                  <input
-                    type="password"
-                    value={addAccPasswordConfirm}
-                    onChange={(e) => setAddAccPasswordConfirm(e.target.value)}
-                    placeholder="Ещё раз пароль"
-                    className="w-full rounded-xl border border-purple-500/30 bg-[#090414] px-3 py-2 text-sm text-white placeholder-purple-300/35 outline-none focus:border-pink-400/70"
-                  />
-                </label>
-              </div>
-
-              <div className="flex justify-end gap-2">
-                <button
-                  type="button"
-                  onClick={() => setShowAddAccountModal(false)}
-                  className="rounded-xl border border-purple-500/30 bg-[#090414] px-4 py-2 text-xs font-bold text-purple-200 hover:text-white"
-                >
-                  Отмена
-                </button>
-                <button
-                  type="submit"
-                  disabled={addAccSubmitting}
-                  className="rounded-xl bg-gradient-to-r from-[#9D4EDD] to-[#FF2A85] px-4 py-2 text-xs font-extrabold text-white shadow-md hover:brightness-110 disabled:opacity-50"
-                >
-                  {addAccSubmitting ? "Проверяем и создаём..." : "Создать личный аккаунт"}
-                </button>
-              </div>
-            </form>
-          </section>
-        )}
-
-        {/* Если пользователь не вошёл — вход или регистрация */}
-        {!currentUser ? (
-          <div className="mx-auto grid max-w-4xl gap-6 md:grid-cols-[300px_1fr]">
-            <aside>
-              <SaturnMascot state={1} onRevive={() => {}} />
-            </aside>
-
-            <section className="rounded-2xl border border-fuchsia-500/25 bg-[#140D2B]/90 p-6 space-y-5">
-              <div className="flex gap-2 rounded-xl border border-purple-500/25 bg-[#090414] p-1 text-xs font-bold">
-                <button
-                  type="button"
-                  onClick={() => {
-                    setAuthMode("login");
-                    setAuthError(null);
-                    setAuthSuggestion(null);
-                  }}
-                  className={`flex flex-1 items-center justify-center gap-1.5 rounded-lg py-2 transition ${
-                    authMode === "login"
-                      ? "bg-gradient-to-r from-[#9D4EDD] to-[#FF2A85] text-white"
-                      : "text-purple-200/75 hover:text-white"
-                  }`}
-                >
-                  <KeyRound className="h-3.5 w-3.5" />
-                  Войти в аккаунт
-                </button>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setAuthMode("register");
-                    setAuthError(null);
-                    setAuthSuggestion(null);
-                  }}
-                  className={`flex flex-1 items-center justify-center gap-1.5 rounded-lg py-2 transition ${
-                    authMode === "register"
-                      ? "bg-gradient-to-r from-[#9D4EDD] to-[#FF2A85] text-white"
-                      : "text-purple-200/75 hover:text-white"
-                  }`}
-                >
-                  <UserPlus className="h-3.5 w-3.5" />
-                  Новый аккаунт
-                </button>
-              </div>
-
-              {authError && (
-                <div className="rounded-xl border border-rose-500/40 bg-rose-950/50 px-3.5 py-2.5 text-xs font-semibold text-rose-200 space-y-2">
-                  <div>{authError}</div>
-                  {authSuggestion && (
+              {addAccError && (
+                <div className="rounded-xl border border-pink-500/40 bg-pink-950/40 px-3 py-2 text-xs font-semibold text-pink-200">
+                  <div>{addAccError}</div>
+                  {addAccSuggestion && (
                     <button
                       type="button"
                       onClick={() => {
-                        setRegEmail(authSuggestion);
-                        setAuthError(null);
-                        setAuthSuggestion(null);
+                        setAddAccEmail(addAccSuggestion);
+                        setAddAccSuggestion(null);
+                        setAddAccError(null);
                       }}
-                      className="rounded-lg bg-white/10 px-2.5 py-1 text-[11px] font-bold text-pink-200 hover:bg-white/20"
+                      className="mt-1 rounded bg-[#FF2A85]/25 px-2 py-0.5 text-[11px] font-bold text-white"
                     >
-                      Использовать {authSuggestion}
+                      Подставить {addAccSuggestion}
                     </button>
                   )}
                 </div>
               )}
 
-              {authMode === "login" ? (
-                <form onSubmit={handleLogin} className="space-y-4">
-                  <label className="block space-y-1.5 text-xs">
-                    <span className="font-bold text-pink-200">
-                      Email, @handle или имя
-                    </span>
-                    <input
-                      type="text"
-                      value={loginIdentifier}
-                      onChange={(e) => setLoginIdentifier(e.target.value)}
-                      placeholder="@system_404 или email"
-                      className="w-full rounded-xl border border-purple-500/30 bg-[#090414] px-3.5 py-2.5 text-sm text-white placeholder-purple-300/35 outline-none focus:border-pink-400/70"
-                    />
-                  </label>
-
-                  <label className="block space-y-1.5 text-xs">
-                    <span className="font-bold text-pink-200">Пароль</span>
-                    <input
-                      type="password"
-                      value={loginPassword}
-                      onChange={(e) => setLoginPassword(e.target.value)}
-                      placeholder="Введите пароль"
-                      className="w-full rounded-xl border border-purple-500/30 bg-[#090414] px-3.5 py-2.5 text-sm text-white placeholder-purple-300/35 outline-none focus:border-pink-400/70"
-                    />
-                  </label>
-
-                  <button
-                    type="submit"
-                    disabled={authSubmitting}
-                    className="w-full rounded-xl bg-gradient-to-r from-[#9D4EDD] to-[#FF2A85] py-2.5 text-sm font-extrabold text-white shadow-lg transition hover:brightness-110 disabled:opacity-50"
-                  >
-                    {authSubmitting ? "Входим..." : "Войти в Aura Space"}
-                  </button>
-                </form>
-              ) : (
-                <form onSubmit={handleRegister} className="space-y-4">
-                  <div className="rounded-xl border border-purple-500/20 bg-[#090414]/80 px-3.5 py-2 text-xs text-purple-200/80">
-                    Создаётся личный аккаунт участника Aura Space.
-                  </div>
-
-                  <div className="grid gap-4 sm:grid-cols-2">
-                    <label className="block space-y-1.5 text-xs">
-                      <span className="font-bold text-pink-200">Имя</span>
-                      <input
-                        type="text"
-                        value={regUsername}
-                        onChange={(e) => setRegUsername(e.target.value)}
-                        placeholder="Твоё имя"
-                        maxLength={28}
-                        className="w-full rounded-xl border border-purple-500/30 bg-[#090414] px-3.5 py-2.5 text-sm text-white placeholder-purple-300/35 outline-none focus:border-pink-400/70"
-                      />
-                    </label>
-
-                    <label className="block space-y-1.5 text-xs">
-                      <span className="font-bold text-pink-200">Хэндл (@handle)</span>
-                      <input
-                        type="text"
-                        value={regHandle}
-                        onChange={(e) => setRegHandle(e.target.value)}
-                        placeholder="@my_handle"
-                        maxLength={20}
-                        className="w-full rounded-xl border border-purple-500/30 bg-[#090414] px-3.5 py-2.5 text-sm text-white placeholder-purple-300/35 outline-none focus:border-pink-400/70"
-                      />
-                    </label>
-                  </div>
-
-                  <label className="block space-y-1.5 text-xs">
-                    <span className="font-bold text-pink-200">Email</span>
-                    <input
-                      type="email"
-                      value={regEmail}
-                      onChange={(e) => {
-                        setRegEmail(e.target.value);
-                        if (authSuggestion) setAuthSuggestion(null);
-                      }}
-                      placeholder="name@example.com"
-                      className="w-full rounded-xl border border-purple-500/30 bg-[#090414] px-3.5 py-2.5 text-sm text-white placeholder-purple-300/35 outline-none focus:border-pink-400/70"
-                    />
-                  </label>
-
-                  <div className="grid gap-4 sm:grid-cols-2">
-                    <label className="block space-y-1.5 text-xs">
-                      <span className="font-bold text-pink-200">Пароль</span>
-                      <input
-                        type="password"
-                        value={regPassword}
-                        onChange={(e) => setRegPassword(e.target.value)}
-                        placeholder="Минимум 6 символов"
-                        className="w-full rounded-xl border border-purple-500/30 bg-[#090414] px-3.5 py-2.5 text-sm text-white placeholder-purple-300/35 outline-none focus:border-pink-400/70"
-                      />
-                    </label>
-
-                    <label className="block space-y-1.5 text-xs">
-                      <span className="font-bold text-pink-200">Повтор пароля</span>
-                      <input
-                        type="password"
-                        value={regPasswordConfirm}
-                        onChange={(e) => setRegPasswordConfirm(e.target.value)}
-                        placeholder="Ещё раз пароль"
-                        className="w-full rounded-xl border border-purple-500/30 bg-[#090414] px-3.5 py-2.5 text-sm text-white placeholder-purple-300/35 outline-none focus:border-pink-400/70"
-                      />
-                    </label>
-                  </div>
-
-                  <button
-                    type="submit"
-                    disabled={authSubmitting}
-                    className="w-full rounded-xl bg-gradient-to-r from-[#9D4EDD] to-[#FF2A85] py-2.5 text-sm font-extrabold text-white shadow-lg transition hover:brightness-110 disabled:opacity-50"
-                  >
-                    {authSubmitting
-                      ? "Проверяем почту и создаём..."
-                      : "Зарегистрироваться в Aura Space"}
-                  </button>
-                </form>
-              )}
-
-              {accounts.filter((a) => a.accountType !== "official").length > 0 && (
-                <div className="border-t border-purple-500/20 pt-4 space-y-2">
-                  <div className="text-[11px] font-bold uppercase tracking-wider text-purple-300/75">
-                    Выбрать сохранённый личный аккаунт для входа
-                  </div>
-                  <div className="flex flex-wrap gap-2">
-                    {accounts
-                      .filter((a) => a.accountType !== "official")
-                      .map((acc) => (
-                        <button
-                          key={acc.id}
-                          type="button"
-                          onClick={() => {
-                            setAuthMode("login");
-                            setLoginIdentifier(acc.email);
-                            setAuthError(null);
-                            setAuthSuggestion(null);
-                          }}
-                          className="flex items-center gap-1.5 rounded-lg border border-purple-500/25 bg-[#090414] px-2.5 py-1 text-xs text-purple-100 hover:border-pink-400/60"
-                        >
-                          <AvatarBadge
-                            name={acc.username}
-                            src={acc.avatar}
-                            size="sm"
-                            presence={acc.presence}
-                          />
-                          {acc.username}{" "}
-                          <VerifiedBadge account={acc} size="sm" />
-                          <span className="text-pink-300">{acc.handle}</span>
-                        </button>
-                      ))}
-                  </div>
-                </div>
-              )}
-            </section>
-          </div>
-        ) : (
-          /* Авторизованный рабочий экран Aura Space */
-          <div className="grid gap-6 lg:grid-cols-[320px_1fr]">
-            <aside className="space-y-5">
-              <SaturnMascot state={saturnState} onRevive={handleRevive} />
-
-              {/* Карточка текущего профиля + переключатель статуса активности */}
-              <div className="rounded-2xl border border-fuchsia-500/25 bg-[#140D2B]/90 p-4 space-y-3">
-                <div className="flex items-center justify-between gap-2">
-                  <div className="flex items-center gap-2.5 min-w-0">
-                    <AvatarBadge
-                      name={currentUser.username}
-                      src={currentUser.avatar}
-                      size="md"
-                      presence={currentUser.presence}
-                    />
-                    <div className="min-w-0">
-                      <div className="flex items-center gap-1.5">
-                        <span className="truncate text-sm font-extrabold text-white">
-                          {currentUser.username}
-                        </span>
-                        <VerifiedBadge account={currentUser} size="sm" />
-                        <span className="shrink-0 rounded bg-[#FF2A85]/20 px-1.5 py-0.5 text-[10px] font-bold text-pink-200">
-                          {accountBadgeLabel(currentUser.accountType)}
-                        </span>
-                      </div>
-                      <div className="truncate text-xs font-semibold text-pink-300">
-                        {currentUser.handle} •{" "}
-                        {formatSubscribers(currentUser.subscribers)} подп.
-                      </div>
-                    </div>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setInspectedHandle(null);
-                      setActiveTab("profile");
-                    }}
-                    className="inline-flex shrink-0 items-center gap-1 rounded-lg border border-pink-400/35 bg-[#24103B] px-2.5 py-1 text-[11px] font-bold text-pink-200 hover:bg-[#331552]"
-                  >
-                    <Edit3 className="h-3 w-3" />
-                    Профиль
-                  </button>
-                </div>
-
-                <div className="flex items-center gap-1 rounded-xl border border-purple-500/20 bg-[#090414] p-1">
-                  {(Object.keys(PRESENCE_META) as PresenceKind[]).map((key) => {
-                    const active = currentUser.presence === key;
-                    return (
-                      <button
-                        key={key}
-                        type="button"
-                        onClick={() => handleChangePresenceQuick(key)}
-                        className={`flex flex-1 items-center justify-center gap-1.5 rounded-lg py-1 text-[11px] font-bold transition ${
-                          active
-                            ? "bg-white/10 text-white"
-                            : "text-purple-300/65 hover:text-white"
-                        }`}
-                      >
-                        <span
-                          className={`h-2 w-2 rounded-full ${PRESENCE_META[key].dotClass}`}
-                        />
-                        {PRESENCE_META[key].label}
-                      </button>
-                    );
-                  })}
-                </div>
-
-                <div className="flex flex-wrap items-center justify-between gap-2 text-[11px]">
-                  <span className="rounded-full bg-white/5 px-2.5 py-0.5 text-purple-200">
-                    {currentUser.mood || "На орбите"}
-                  </span>
-                  <span className="text-purple-300/65">
-                    активность: {currentUser.lastActive}
-                  </span>
-                </div>
-
-                {currentUser.bio ? (
-                  <p className="text-xs leading-relaxed text-purple-200/80">
-                    {currentUser.bio}
-                  </p>
-                ) : (
-                  <p className="text-xs italic text-purple-300/50">
-                    Описание профиля ещё не заполнено
-                  </p>
-                )}
-
-                {quickSwitchAccounts.length > 0 && (
-                  <div className="border-t border-purple-500/20 pt-2.5 space-y-1.5">
-                    <div className="flex items-center justify-between text-[10px] font-bold uppercase tracking-wider text-purple-300/75">
-                      <span>Мои аккаунты ({quickSwitchAccounts.length})</span>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setAddAccError(null);
-                          setAddAccSuggestion(null);
-                          setShowAddAccountModal(true);
-                        }}
-                        className="text-pink-300 hover:underline"
-                      >
-                        + Ещё
-                      </button>
-                    </div>
-                    <div className="space-y-1">
-                      {quickSwitchAccounts.map((acc) => {
-                        const isCurrent = acc.id === currentUser.id;
-                        return (
-                          <button
-                            key={acc.id}
-                            type="button"
-                            onClick={() => switchActiveAccount(acc.id)}
-                            className={`flex w-full items-center justify-between gap-2 rounded-xl px-2.5 py-1.5 text-left text-xs transition ${
-                              isCurrent
-                                ? "border border-pink-400/40 bg-gradient-to-r from-[#9D4EDD]/30 to-[#FF2A85]/20 text-white"
-                                : "border border-transparent bg-[#090414]/60 text-purple-200/80 hover:border-purple-500/30 hover:text-white"
-                            }`}
-                          >
-                            <span className="flex min-w-0 items-center gap-1.5">
-                              <AvatarBadge
-                                name={acc.username}
-                                src={acc.avatar}
-                                size="sm"
-                                presence={acc.presence}
-                              />
-                              <span className="truncate font-bold">
-                                {acc.username}
-                              </span>
-                              <VerifiedBadge account={acc} size="sm" />
-                              <span className="truncate text-[11px] text-pink-300">
-                                {acc.handle}
-                              </span>
-                            </span>
-                            <span className="shrink-0 rounded bg-white/10 px-1.5 py-0.5 text-[10px] font-semibold text-pink-200">
-                              {isCurrent
-                                ? "Активен"
-                                : accountBadgeLabel(acc.accountType)}
-                            </span>
-                          </button>
-                        );
-                      })}
-                    </div>
-                  </div>
-                )}
-              </div>
-
-              {/* Каналы + создание своего канала */}
-              <div className="rounded-2xl border border-fuchsia-500/20 bg-[#140D2B]/80 p-4 space-y-2.5">
-                <div className="flex items-center justify-between">
-                  <span className="flex items-center gap-1.5 text-xs font-bold uppercase tracking-wider text-pink-300">
-                    <Users className="h-3.5 w-3.5" />
-                    Каналы
-                  </span>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setShowChannelForm((v) => !v);
-                      setChannelError(null);
-                    }}
-                    className="inline-flex items-center gap-1 rounded-lg border border-pink-400/35 bg-[#24103B] px-2 py-0.5 text-[11px] font-bold text-pink-200 hover:bg-[#331552]"
-                  >
-                    <Plus className="h-3 w-3" />
-                    Создать
-                  </button>
-                </div>
-
-                {showChannelForm && (
-                  <form
-                    onSubmit={handleCreateChannel}
-                    className="rounded-xl border border-purple-500/25 bg-[#090414] p-3 space-y-2"
-                  >
-                    <input
-                      type="text"
-                      value={newChannelName}
-                      onChange={(e) => setNewChannelName(e.target.value)}
-                      placeholder="название-канала"
-                      maxLength={24}
-                      className="w-full rounded-lg border border-purple-500/30 bg-[#140D2B] px-2.5 py-1.5 text-xs text-white placeholder-purple-300/40 outline-none focus:border-pink-400/60"
-                    />
-                    <input
-                      type="text"
-                      value={newChannelTopic}
-                      onChange={(e) => setNewChannelTopic(e.target.value)}
-                      placeholder="Тема канала (необязательно)"
-                      maxLength={80}
-                      className="w-full rounded-lg border border-purple-500/30 bg-[#140D2B] px-2.5 py-1.5 text-xs text-white placeholder-purple-300/40 outline-none focus:border-pink-400/60"
-                    />
-                    {channelError && (
-                      <div className="text-[11px] font-semibold text-rose-300">
-                        {channelError}
-                      </div>
-                    )}
-                    <button
-                      type="submit"
-                      className="w-full rounded-lg bg-gradient-to-r from-[#9D4EDD] to-[#FF2A85] py-1.5 text-xs font-bold text-white hover:brightness-110"
-                    >
-                      Добавить канал
-                    </button>
-                  </form>
-                )}
-
-                <div className="space-y-1">
-                  {rooms.map((room) => {
-                    const isContentView =
-                      activeTab === "feed" || activeTab === "chat";
-                    const selected = isContentView && room.id === activeRoom.id;
-                    const isVoiceHere = inVoiceCall && voiceRoomId === room.id;
-                    const countPosts = posts.filter(
-                      (p) => p.roomId === room.id
-                    ).length;
-                    const countMsgs = messages.filter(
-                      (m) => m.roomId === room.id
-                    ).length;
-                    const isCustom = !DEFAULT_ROOMS.some(
-                      (d) => d.id === room.id
-                    );
-
-                    return (
-                      <div
-                        key={room.id}
-                        className={`flex items-center justify-between gap-1 rounded-xl px-2.5 py-1.5 text-sm transition ${
-                          selected
-                            ? "border border-pink-400/40 bg-gradient-to-r from-[#9D4EDD]/35 to-[#FF2A85]/25 text-white"
-                            : "border border-transparent text-purple-200/80 hover:bg-white/5"
-                        }`}
-                      >
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setActiveRoomId(room.id);
-                            setInspectedHandle(null);
-                            if (
-                              activeTab === "profile" ||
-                              activeTab === "friends"
-                            ) {
-                              setActiveTab("feed");
-                            }
-                          }}
-                          className="flex min-w-0 flex-1 items-center justify-between gap-2 text-left"
-                        >
-                          <span className="flex min-w-0 items-center gap-2 font-semibold">
-                            <Hash className="h-4 w-4 shrink-0 text-pink-400" />
-                            <span className="truncate">{room.name}</span>
-                            {isVoiceHere && (
-                              <span className="rounded bg-emerald-500/20 px-1.5 py-0.5 text-[10px] font-bold text-emerald-300">
-                                голос
-                              </span>
-                            )}
-                          </span>
-                          <span className="shrink-0 text-[11px] text-purple-300/80">
-                            {countPosts}п • {countMsgs}ч
-                          </span>
-                        </button>
-
-                        {isCustom && (
-                          <button
-                            type="button"
-                            onClick={() => handleDeleteChannel(room.id)}
-                            title="Удалить канал"
-                            className="rounded-lg p-1 text-purple-300/50 hover:bg-rose-500/15 hover:text-rose-300"
-                          >
-                            <Trash2 className="h-3.5 w-3.5" />
-                          </button>
-                        )}
-                      </div>
-                    );
-                  })}
-                </div>
-              </div>
-            </aside>
-
-            <section className="space-y-5">
-              {/* Шапка и переключение Лента / Чат / Друзья / Профиль + кнопка Голоса */}
-              <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-fuchsia-500/20 bg-[#140D2B]/85 p-4">
-                <div>
-                  <h2 className="flex items-center gap-1.5 text-lg font-extrabold text-white">
-                    {activeTab === "profile" ? (
-                      <>
-                        <UserCheck className="h-5 w-5 text-[#FF70B8]" />
-                        {displayedProfileUser ? (
-                          <span className="inline-flex items-center gap-1.5">
-                            <span>{displayedProfileUser.username}</span>
-                            <VerifiedBadge
-                              account={displayedProfileUser}
-                              size="md"
-                            />
-                            <span className="text-pink-300">
-                              ({displayedProfileUser.handle})
-                            </span>
-                          </span>
-                        ) : (
-                          inspectedHandle || "Профиль"
-                        )}
-                      </>
-                    ) : activeTab === "friends" ? (
-                      <>
-                        <Users className="h-5 w-5 text-[#FF70B8]" />
-                        Друзья ({(currentUser.friends || []).length})
-                      </>
-                    ) : (
-                      <>
-                        <Hash className="h-5 w-5 text-[#FF70B8]" />
-                        {activeRoom.name}
-                      </>
-                    )}
-                  </h2>
-                  <p className="text-xs text-purple-200/75">
-                    {activeTab === "profile"
-                      ? isOwnProfile
-                        ? "Обложка, аватарка, статус активности и посты твоего аккаунта"
-                        : "Профиль участника Aura Space"
-                      : activeTab === "friends"
-                      ? "Добавление друзей по @handle и список участников"
-                      : activeRoom.topic}
-                  </p>
-                </div>
-
-                <div className="flex flex-wrap items-center gap-2">
-                  <button
-                    type="button"
-                    onClick={() => {
-                      if (inVoiceCall && voiceRoomId === activeRoom.id) {
-                        cleanupVoiceSession(true);
-                      } else {
-                        handleJoinVoiceChannel(activeRoom.id);
-                      }
-                    }}
-                    className={`inline-flex items-center gap-1.5 rounded-xl px-3 py-1.5 text-xs font-extrabold transition ${
-                      inVoiceCall && voiceRoomId === activeRoom.id
-                        ? "bg-emerald-500/25 text-emerald-200 border border-emerald-400/40"
-                        : "border border-pink-400/35 bg-[#24103B] text-pink-200 hover:bg-[#331552]"
-                    }`}
-                  >
-                    <PhoneCall className="h-3.5 w-3.5" />
-                    {inVoiceCall && voiceRoomId === activeRoom.id
-                      ? "В голосе"
-                      : "Голосовой чат"}
-                  </button>
-
-                  <div className="flex flex-wrap rounded-xl border border-purple-500/30 bg-[#090414] p-1 text-xs font-bold">
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setInspectedHandle(null);
-                        setActiveTab("feed");
-                      }}
-                      className={`rounded-lg px-3 py-1.5 transition ${
-                        activeTab === "feed"
-                          ? "bg-gradient-to-r from-[#9D4EDD] to-[#FF2A85] text-white"
-                          : "text-purple-200/80 hover:text-white"
-                      }`}
-                    >
-                      Лента ({roomPosts.length})
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setInspectedHandle(null);
-                        setActiveTab("chat");
-                      }}
-                      className={`rounded-lg px-3 py-1.5 transition ${
-                        activeTab === "chat"
-                          ? "bg-gradient-to-r from-[#9D4EDD] to-[#FF2A85] text-white"
-                          : "text-purple-200/80 hover:text-white"
-                      }`}
-                    >
-                      Чат ({roomMessages.length})
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setInspectedHandle(null);
-                        setActiveTab("friends");
-                        setFriendMessage(null);
-                      }}
-                      className={`rounded-lg px-3 py-1.5 transition ${
-                        activeTab === "friends"
-                          ? "bg-gradient-to-r from-[#9D4EDD] to-[#FF2A85] text-white"
-                          : "text-purple-200/80 hover:text-white"
-                      }`}
-                    >
-                      Друзья ({(currentUser.friends || []).length})
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setInspectedHandle(null);
-                        setActiveTab("profile");
-                      }}
-                      className={`rounded-lg px-3 py-1.5 transition ${
-                        activeTab === "profile"
-                          ? "bg-gradient-to-r from-[#9D4EDD] to-[#FF2A85] text-white"
-                          : "text-purple-200/80 hover:text-white"
-                      }`}
-                    >
-                      Профиль
-                    </button>
-                  </div>
-                </div>
-              </div>
-
-              {activeTab === "friends" ? (
-                <div className="space-y-5">
-                  <div className="rounded-2xl border border-fuchsia-500/25 bg-[#140D2B]/90 p-5 space-y-4">
-                    <div className="text-xs font-extrabold uppercase tracking-wider text-pink-300">
-                      Добавить друга по @handle
-                    </div>
-
-                    <form
-                      onSubmit={(e) => {
-                        e.preventDefault();
-                        handleAddFriendByHandle(friendHandleInput);
-                      }}
-                      className="flex flex-wrap gap-2"
-                    >
-                      <input
-                        type="text"
-                        value={friendHandleInput}
-                        onChange={(e) => setFriendHandleInput(e.target.value)}
-                        placeholder="@system_404 или handle"
-                        className="min-w-[200px] flex-1 rounded-xl border border-purple-500/30 bg-[#090414] px-3.5 py-2 text-sm text-white placeholder-purple-300/35 outline-none focus:border-pink-400/70"
-                      />
-                      <button
-                        type="submit"
-                        className="inline-flex items-center gap-1.5 rounded-xl bg-gradient-to-r from-[#9D4EDD] to-[#FF2A85] px-4 py-2 text-xs font-extrabold text-white shadow-md hover:brightness-110"
-                      >
-                        <UserPlus className="h-3.5 w-3.5" />
-                        Добавить в друзья
-                      </button>
-                    </form>
-
-                    {friendMessage && (
-                      <div className="rounded-xl border border-fuchsia-500/30 bg-[#090414] px-3.5 py-2 text-xs font-semibold text-pink-200">
-                        {friendMessage}
-                      </div>
-                    )}
-                  </div>
-
-                  {/* Список моих друзей */}
-                  <div className="rounded-2xl border border-fuchsia-500/25 bg-[#140D2B]/90 p-5 space-y-3">
-                    <div className="text-xs font-extrabold uppercase tracking-wider text-pink-300">
-                      Мои друзья ({(currentUser.friends || []).length})
-                    </div>
-                    {(currentUser.friends || []).length === 0 ? (
-                      <p className="text-sm text-purple-200/70">
-                        Список друзей пока пуст. Добавь кого-нибудь по @handle выше или из участников ниже.
-                      </p>
-                    ) : (
-                      <div className="grid gap-3 sm:grid-cols-2">
-                        {(currentUser.friends || []).map((fHandle) => {
-                          const acc = accounts.find(
-                            (a) => safeLower(a?.handle) === safeLower(fHandle)
-                          );
-                          const displayName = acc?.username ?? fHandle;
-                          const displayAvatar = acc?.avatar ?? null;
-                          const presence = acc?.presence ?? "orbit";
-
-                          return (
-                            <div
-                              key={fHandle}
-                              className="flex items-center justify-between gap-3 rounded-xl border border-purple-500/20 bg-[#090414]/90 p-3"
-                            >
-                              <button
-                                type="button"
-                                onClick={() => openUserProfile(fHandle)}
-                                className="flex min-w-0 items-center gap-2.5 text-left"
-                              >
-                                <AvatarBadge
-                                  name={displayName}
-                                  src={displayAvatar}
-                                  size="md"
-                                  presence={presence}
-                                />
-                                <div className="min-w-0">
-                                  <div className="flex items-center gap-1 truncate text-sm font-bold text-white hover:text-[#FF70B8]">
-                                    <span className="truncate">{displayName}</span>
-                                    <VerifiedBadge account={acc} size="sm" />
-                                  </div>
-                                  <div className="truncate text-xs text-pink-300">
-                                    {fHandle} • {PRESENCE_META[presence].label}
-                                  </div>
-                                </div>
-                              </button>
-
-                              <button
-                                type="button"
-                                onClick={() => handleRemoveFriend(fHandle)}
-                                title="Удалить из друзей"
-                                className="inline-flex shrink-0 items-center gap-1 rounded-lg border border-rose-500/30 bg-rose-950/30 px-2.5 py-1 text-xs font-semibold text-rose-200 hover:bg-rose-900/40"
-                              >
-                                <UserMinus className="h-3.5 w-3.5" />
-                                Убрать
-                              </button>
-                            </div>
-                          );
-                        })}
-                      </div>
-                    )}
-                  </div>
-
-                  {/* Участники в базе и ленте */}
-                  <div className="rounded-2xl border border-fuchsia-500/20 bg-[#140D2B]/80 p-5 space-y-3">
-                    <div className="text-xs font-extrabold uppercase tracking-wider text-pink-300">
-                      Участники Aura Space
-                    </div>
-                    <div className="grid gap-3 sm:grid-cols-2">
-                      {knownCommunityHandles
-                        .filter(
-                          (u) => safeLower(u.handle) !== currentUserHandleLower
-                        )
-                        .map((person) => {
-                          const isFriend = (
-                            currentUser.friends || []
-                          ).some((f) => safeLower(f) === safeLower(person.handle));
-
-                          return (
-                            <div
-                              key={person.handle}
-                              className="flex items-center justify-between gap-3 rounded-xl border border-purple-500/15 bg-[#090414]/80 p-3"
-                            >
-                              <button
-                                type="button"
-                                onClick={() => openUserProfile(person.handle)}
-                                className="flex min-w-0 items-center gap-2.5 text-left"
-                              >
-                                <AvatarBadge
-                                  name={person.username}
-                                  src={person.avatar}
-                                  size="md"
-                                  presence={person.presence}
-                                />
-                                <div className="min-w-0">
-                                  <div className="flex items-center gap-1 truncate text-sm font-bold text-white hover:text-[#FF70B8]">
-                                    <span className="truncate">{person.username}</span>
-                                    <VerifiedBadge
-                                      account={{
-                                        accountType: person.accountType,
-                                        subscribers: person.subscribers,
-                                      }}
-                                      size="sm"
-                                    />
-                                  </div>
-                                  <div className="truncate text-xs text-pink-300">
-                                    {person.handle} •{" "}
-                                    {PRESENCE_META[person.presence].label}
-                                  </div>
-                                </div>
-                              </button>
-
-                              {isFriend ? (
-                                <button
-                                  type="button"
-                                  onClick={() => handleRemoveFriend(person.handle)}
-                                  className="shrink-0 rounded-lg border border-purple-500/30 bg-white/5 px-2.5 py-1 text-xs font-semibold text-purple-200 hover:bg-white/10"
-                                >
-                                  В друзьях
-                                </button>
-                              ) : (
-                                <button
-                                  type="button"
-                                  onClick={() =>
-                                    handleAddFriendByHandle(person.handle)
-                                  }
-                                  className="inline-flex shrink-0 items-center gap-1 rounded-lg bg-[#FF2A85]/25 px-2.5 py-1 text-xs font-bold text-pink-200 hover:bg-[#FF2A85]/40"
-                                >
-                                  <UserPlus className="h-3.5 w-3.5" />
-                                  Добавить
-                                </button>
-                              )}
-                            </div>
-                          );
-                        })}
-                    </div>
-                  </div>
-                </div>
-              ) : activeTab === "profile" ? (
-                <div className="space-y-5">
-                  {displayedProfileUser ? (
-                    <div className="overflow-hidden rounded-2xl border border-fuchsia-500/25 bg-[#140D2B]/90">
-                      {/* Обложка профиля (баннер) */}
-                      {(() => {
-                        const activeBanner = isOwnProfile
-                          ? profileBanner
-                          : displayedProfileUser.banner;
-                        const isImageBanner =
-                          !!activeBanner &&
-                          (activeBanner.startsWith("data:image/") ||
-                            activeBanner.startsWith("http"));
-                        return (
-                          <div
-                            className="relative h-36 w-full border-b border-fuchsia-500/25 bg-[#090414] sm:h-44"
-                            style={
-                              isImageBanner
-                                ? undefined
-                                : {
-                                    background:
-                                      activeBanner || BANNER_PRESETS[0].gradient,
-                                  }
-                            }
-                          >
-                            {isImageBanner && (
-                              <img
-                                src={activeBanner}
-                                alt="Обложка профиля"
-                                className="h-full w-full object-cover"
-                              />
-                            )}
-                            <div className="absolute inset-0 bg-gradient-to-t from-[#140D2B] via-transparent to-black/20" />
-                            <div className="absolute right-3 top-3 flex items-center gap-2">
-                              <span
-                                className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[11px] font-bold backdrop-blur-sm ${
-                                  PRESENCE_META[
-                                    displayedProfileUser.presence || "online"
-                                  ].badgeClass
-                                }`}
-                              >
-                                <span
-                                  className={`h-2 w-2 rounded-full ${
-                                    PRESENCE_META[
-                                      displayedProfileUser.presence || "online"
-                                    ].dotClass
-                                  }`}
-                                />
-                                {
-                                  PRESENCE_META[
-                                    displayedProfileUser.presence || "online"
-                                  ].label
-                                }
-                              </span>
-                            </div>
-                          </div>
-                        );
-                      })()}
-
-                      <div className="p-5 space-y-5">
-                        <div className="-mt-12 flex flex-wrap items-end justify-between gap-4 border-b border-purple-500/20 pb-4">
-                          <div className="flex flex-wrap items-end gap-3.5">
-                            <div className="rounded-full bg-[#140D2B] p-1 shadow-xl">
-                              <AvatarBadge
-                                name={displayedProfileUser.username}
-                                src={displayedProfileUser.avatar}
-                                size="lg"
-                                presence={displayedProfileUser.presence}
-                              />
-                            </div>
-                            <div className="space-y-1 pt-2">
-                              <div className="flex flex-wrap items-center gap-2">
-                                <h3 className="flex items-center gap-1.5 text-xl font-black text-white">
-                                  <span>{displayedProfileUser.username}</span>
-                                  <VerifiedBadge
-                                    account={displayedProfileUser}
-                                    size="md"
-                                  />
-                                </h3>
-                                <span className="rounded-full bg-[#FF2A85]/20 px-2.5 py-0.5 text-xs font-bold text-pink-200">
-                                  {displayedProfileUser.handle}
-                                </span>
-                                <span className="rounded-full border border-pink-400/35 bg-[#24103B] px-2.5 py-0.5 text-xs font-bold text-pink-200">
-                                  {accountBadgeLabel(
-                                    displayedProfileUser.accountType
-                                  )}
-                                </span>
-                                <span className="rounded-full border border-purple-500/30 bg-[#090414] px-2.5 py-0.5 text-xs text-purple-200">
-                                  {displayedProfileUser.mood || "На орбите"}
-                                </span>
-                              </div>
-                              <p className="text-xs text-purple-300/75">
-                                Активность: {displayedProfileUser.lastActive} • В
-                                сети с {displayedProfileUser.createdAt} •{" "}
-                                {formatSubscribers(
-                                  displayedProfileUser.subscribers
-                                )}{" "}
-                                подписчиков •{" "}
-                                {(displayedProfileUser.friends || []).length}{" "}
-                                друзей • {inspectedPosts.length} постов •{" "}
-                                {inspectedMessagesCount} сообщений
-                              </p>
-                            </div>
-                          </div>
-
-                          <div className="flex flex-wrap items-center gap-2">
-                            {!isOwnProfile && (
-                              <>
-                                {(currentUser.friends || []).some(
-                                  (f) =>
-                                    safeLower(f) ===
-                                    safeLower(displayedProfileUser.handle)
-                                ) ? (
-                                  <button
-                                    type="button"
-                                    onClick={() =>
-                                      handleRemoveFriend(
-                                        displayedProfileUser.handle
-                                      )
-                                    }
-                                    className="inline-flex items-center gap-1 rounded-xl border border-rose-500/35 bg-rose-950/30 px-3 py-1.5 text-xs font-bold text-rose-200 hover:bg-rose-900/40"
-                                  >
-                                    <UserMinus className="h-3.5 w-3.5" />
-                                    Убрать из друзей
-                                  </button>
-                                ) : (
-                                  <button
-                                    type="button"
-                                    onClick={() =>
-                                      handleAddFriendByHandle(
-                                        displayedProfileUser.handle
-                                      )
-                                    }
-                                    className="inline-flex items-center gap-1 rounded-xl bg-gradient-to-r from-[#9D4EDD] to-[#FF2A85] px-3 py-1.5 text-xs font-bold text-white hover:brightness-110"
-                                  >
-                                    <UserPlus className="h-3.5 w-3.5" />
-                                    В друзья
-                                  </button>
-                                )}
-
-                                <button
-                                  type="button"
-                                  onClick={() => setInspectedHandle(null)}
-                                  className="inline-flex items-center gap-1 rounded-xl border border-purple-500/30 bg-[#090414] px-3 py-1.5 text-xs font-bold text-purple-200 hover:border-pink-400/60"
-                                >
-                                  <X className="h-3.5 w-3.5" />
-                                  К моему профилю
-                                </button>
-                              </>
-                            )}
-                          </div>
-                        </div>
-
-                        <p className="whitespace-pre-wrap text-sm leading-relaxed text-purple-100">
-                          {displayedProfileUser.bio ||
-                            "Пользователь пока не добавил описание профиля."}
-                        </p>
-
-                        {isOwnProfile && (
-                          <form
-                            onSubmit={handleSaveProfile}
-                            className="border-t border-purple-500/20 pt-4 space-y-4"
-                          >
-                            <div className="text-xs font-extrabold uppercase tracking-wider text-pink-300">
-                              Редактировать профиль, обложку и статус
-                            </div>
-
-                            {profileError && (
-                              <div className="rounded-xl border border-rose-500/40 bg-rose-950/50 px-3.5 py-2 text-xs font-semibold text-rose-200">
-                                {profileError}
-                              </div>
-                            )}
-
-                            {profileSaved && !profileError && (
-                              <div className="rounded-xl border border-emerald-500/35 bg-emerald-950/40 px-3.5 py-2 text-xs font-semibold text-emerald-200">
-                                Профиль, обложка и аватарка сохранены.
-                              </div>
-                            )}
-
-                            <div className="space-y-2.5 rounded-xl border border-purple-500/20 bg-[#090414]/80 p-3.5">
-                              <div className="flex flex-wrap items-center justify-between gap-2">
-                                <span className="text-xs font-bold text-pink-200">
-                                  Обложка профиля (баннер)
-                                </span>
-                                <label className="inline-flex cursor-pointer items-center gap-1.5 rounded-xl border border-pink-400/40 bg-[#24103B] px-3 py-1.5 text-xs font-bold text-pink-200 hover:bg-[#331552]">
-                                  <ImageIcon className="h-3.5 w-3.5" />
-                                  Загрузить картинку баннера
-                                  <input
-                                    type="file"
-                                    accept="image/*"
-                                    onChange={handleBannerFileChange}
-                                    className="hidden"
-                                  />
-                                </label>
-                              </div>
-
-                              <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
-                                {BANNER_PRESETS.map((preset) => {
-                                  const selected =
-                                    profileBanner === preset.gradient;
-                                  return (
-                                    <button
-                                      key={preset.id}
-                                      type="button"
-                                      onClick={() => {
-                                        setProfileBanner(preset.gradient);
-                                        setProfileSaved(false);
-                                      }}
-                                      className={`overflow-hidden rounded-xl border text-left transition ${
-                                        selected
-                                          ? "border-pink-400 ring-2 ring-pink-400/40"
-                                          : "border-purple-500/25 opacity-80 hover:opacity-100"
-                                      }`}
-                                    >
-                                      <div
-                                        className="h-9 w-full"
-                                        style={{ background: preset.gradient }}
-                                      />
-                                      <div className="bg-[#140D2B] px-2 py-1 text-[10px] font-semibold text-purple-100 truncate">
-                                        {preset.label}
-                                      </div>
-                                    </button>
-                                  );
-                                })}
-                              </div>
-                            </div>
-
-                            <div className="flex flex-wrap items-center gap-4 rounded-xl border border-purple-500/20 bg-[#090414]/80 p-3.5">
-                              <AvatarBadge
-                                name={profileUsername || currentUser.username}
-                                src={profileAvatar}
-                                size="lg"
-                                presence={profilePresence}
-                              />
-                              <div className="space-y-2">
-                                <div className="flex flex-wrap items-center gap-2">
-                                  <label className="inline-flex cursor-pointer items-center gap-1.5 rounded-xl border border-pink-400/40 bg-[#24103B] px-3 py-1.5 text-xs font-bold text-pink-200 hover:bg-[#331552]">
-                                    <Camera className="h-3.5 w-3.5" />
-                                    Загрузить аватарку
-                                    <input
-                                      type="file"
-                                      accept="image/*"
-                                      onChange={handleAvatarFileChange}
-                                      className="hidden"
-                                    />
-                                  </label>
-                                  {profileAvatar && (
-                                    <button
-                                      type="button"
-                                      onClick={() => {
-                                        setProfileAvatar(null);
-                                        setProfileSaved(false);
-                                      }}
-                                      className="rounded-xl border border-purple-500/30 bg-[#140D2B] px-3 py-1.5 text-xs font-semibold text-purple-200 hover:text-white"
-                                    >
-                                      Убрать фото
-                                    </button>
-                                  )}
-                                </div>
-                                <p className="text-[11px] text-purple-300/70">
-                                  PNG, JPG, GIF или WEBP до 1.5 МБ. Отображается
-                                  рядом с твоим именем везде.
-                                </p>
-                              </div>
-                            </div>
-
-                            <div className="space-y-1.5">
-                              <span className="block text-xs font-bold text-pink-200">
-                                Индикатор активности
-                              </span>
-                              <div className="flex gap-2 rounded-xl border border-purple-500/25 bg-[#090414] p-1 text-xs font-bold">
-                                {(
-                                  Object.keys(PRESENCE_META) as PresenceKind[]
-                                ).map((key) => (
-                                  <button
-                                    key={key}
-                                    type="button"
-                                    onClick={() => {
-                                      setProfilePresence(key);
-                                      setProfileSaved(false);
-                                    }}
-                                    className={`flex flex-1 items-center justify-center gap-1.5 rounded-lg py-1.5 transition ${
-                                      profilePresence === key
-                                        ? "bg-gradient-to-r from-[#9D4EDD] to-[#FF2A85] text-white"
-                                        : "text-purple-200/75 hover:text-white"
-                                    }`}
-                                  >
-                                    <span
-                                      className={`h-2 w-2 rounded-full ${PRESENCE_META[key].dotClass}`}
-                                    />
-                                    {PRESENCE_META[key].label}
-                                  </button>
-                                ))}
-                              </div>
-                            </div>
-
-                            <div className="grid gap-4 sm:grid-cols-3">
-                              <label className="block space-y-1.5 text-xs">
-                                <span className="font-bold text-pink-200">Имя</span>
-                                <input
-                                  type="text"
-                                  value={profileUsername}
-                                  onChange={(e) => {
-                                    setProfileUsername(e.target.value);
-                                    setProfileSaved(false);
-                                  }}
-                                  maxLength={28}
-                                  className="w-full rounded-xl border border-purple-500/30 bg-[#090414] px-3 py-2 text-sm text-white outline-none focus:border-pink-400/70"
-                                />
-                              </label>
-
-                              <div className="block space-y-1.5 text-xs">
-                                <span className="font-bold text-pink-200">
-                                  Хэндл (@handle)
-                                </span>
-                                <div className="flex h-[38px] items-center rounded-xl border border-purple-500/20 bg-[#090414]/60 px-3 text-sm font-semibold text-pink-300/80">
-                                  {currentUser.handle}
-                                </div>
-                              </div>
-
-                              <label className="block space-y-1.5 text-xs">
-                                <span className="font-bold text-pink-200">
-                                  Текстовый статус
-                                </span>
-                                <input
-                                  type="text"
-                                  value={profileMood}
-                                  onChange={(e) => {
-                                    setProfileMood(e.target.value);
-                                    setProfileSaved(false);
-                                  }}
-                                  maxLength={40}
-                                  placeholder="На орбите"
-                                  className="w-full rounded-xl border border-purple-500/30 bg-[#090414] px-3 py-2 text-sm text-white outline-none focus:border-pink-400/70"
-                                />
-                              </label>
-                            </div>
-
-                            <label className="block space-y-1.5 text-xs">
-                              <span className="font-bold text-pink-200">
-                                О себе
-                              </span>
-                              <textarea
-                                rows={3}
-                                value={profileBio}
-                                onChange={(e) => {
-                                  setProfileBio(e.target.value);
-                                  setProfileSaved(false);
-                                }}
-                                maxLength={240}
-                                placeholder="Пара слов о себе, проектах или настроении..."
-                                className="w-full resize-none rounded-xl border border-purple-500/30 bg-[#090414] p-3 text-sm text-white placeholder-purple-300/35 outline-none focus:border-pink-400/70"
-                              />
-                            </label>
-
-                            <label className="block space-y-1.5 text-xs">
-                              <span className="font-bold text-pink-200">
-                                Новый пароль (оставь пустым, если менять не нужно)
-                              </span>
-                              <input
-                                type="password"
-                                value={profileNewPassword}
-                                onChange={(e) => {
-                                  setProfileNewPassword(e.target.value);
-                                  setProfileSaved(false);
-                                }}
-                                placeholder="Минимум 6 символов"
-                                className="w-full rounded-xl border border-purple-500/30 bg-[#090414] px-3 py-2 text-sm text-white placeholder-purple-300/35 outline-none focus:border-pink-400/70"
-                              />
-                            </label>
-
-                            <button
-                              type="submit"
-                              className="inline-flex items-center gap-1.5 rounded-xl bg-gradient-to-r from-[#9D4EDD] to-[#FF2A85] px-4 py-2 text-xs font-extrabold text-white shadow-md hover:brightness-110"
-                            >
-                              <Save className="h-3.5 w-3.5" />
-                              Сохранить профиль
-                            </button>
-                          </form>
-                        )}
-                      </div>
-                    </div>
-                  ) : (
-                    <div className="rounded-2xl border border-fuchsia-500/25 bg-[#140D2B]/90 p-5 space-y-3">
-                      <div className="flex items-center justify-between">
-                        <div>
-                          <h3 className="text-lg font-extrabold text-white">
-                            {inspectedHandle}
-                          </h3>
-                          <p className="text-xs text-purple-300/75">
-                            Участник из ленты/чата (отдельный аккаунт ещё не создан)
-                          </p>
-                        </div>
-                        <button
-                          type="button"
-                          onClick={() => setInspectedHandle(null)}
-                          className="rounded-xl border border-purple-500/30 bg-[#090414] px-3 py-1.5 text-xs font-bold text-purple-200 hover:border-pink-400/60"
-                        >
-                          К моему профилю
-                        </button>
-                      </div>
-                    </div>
-                  )}
-
-                  {/* Посты выбранного пользователя */}
-                  <div className="space-y-3">
-                    <div className="text-xs font-extrabold uppercase tracking-wider text-pink-300">
-                      Публикации ({inspectedPosts.length})
-                    </div>
-                    {inspectedPosts.length === 0 ? (
-                      <div className="rounded-2xl border border-dashed border-purple-500/25 bg-[#140D2B]/50 p-6 text-center text-sm text-purple-200/70">
-                        Пока нет опубликованных постов.
-                      </div>
-                    ) : (
-                      inspectedPosts.map((post) => (
-                        <article
-                          key={post.id}
-                          className="rounded-2xl border border-fuchsia-500/20 bg-[#140D2B]/85 p-4 space-y-2.5"
-                        >
-                          <div className="flex items-center justify-between text-xs text-purple-300/75">
-                            <span className="inline-flex items-center gap-1 font-bold text-pink-200">
-                              <span>
-                                #{post.roomId} • {post.author}
-                              </span>
-                              <VerifiedBadge
-                                account={accountByHandle.get(safeLower(post.handle))}
-                                size="sm"
-                              />
-                              <span>({post.handle})</span>
-                            </span>
-                            <span>
-                              {post.createdAt}
-                              {post.editedAt ? ` (изм. ${post.editedAt})` : ""}
-                            </span>
-                          </div>
-                          {post.text && (
-                            <p className="whitespace-pre-wrap text-sm text-purple-100">
-                              <RichTextWithMentions
-                                text={post.text}
-                                knownHandles={knownHandlesSet}
-                                currentUserHandle={currentUserHandle}
-                                onSelectHandle={openUserProfile}
-                              />
-                            </p>
-                          )}
-                          {post.image && (
-                            <div className="relative overflow-hidden rounded-xl border border-fuchsia-500/25 bg-[#090414]">
-                              <img
-                                src={post.image}
-                                alt={`Фото в посте ${post.author}`}
-                                onClick={() => setLightboxImage(post.image || null)}
-                                className="max-h-96 w-full cursor-zoom-in object-contain"
-                              />
-                            </div>
-                          )}
-                        </article>
-                      ))
-                    )}
-                  </div>
-                </div>
-              ) : activeTab === "feed" ? (
-                <>
-                  <form
-                    onSubmit={handleCreatePost}
-                    className="rounded-2xl border border-fuchsia-500/25 bg-[#140D2B]/90 p-4 space-y-3"
-                  >
-                    <textarea
-                      rows={3}
-                      value={postInput}
-                      onChange={(e) => {
-                        setPostInput(e.target.value);
-                        if (postError) setPostError(null);
-                      }}
-                      placeholder={`Написать пост от имени ${currentUser.username} (${currentUser.handle}) в #${activeRoom.name}... Используй @handle для упоминания`}
-                      className="w-full resize-none rounded-xl border border-purple-500/25 bg-[#090414] p-3 text-sm text-white placeholder-purple-300/40 outline-none focus:border-pink-400/60"
-                    />
-
-                    {postError && (
-                      <div className="rounded-xl border border-rose-500/40 bg-rose-950/50 px-3 py-2 text-xs font-semibold text-rose-200">
-                        {postError}
-                      </div>
-                    )}
-
-                    {showImageUrlInput && !postImage && (
-                      <div className="flex flex-wrap items-center gap-2 rounded-xl border border-purple-500/25 bg-[#090414] p-2.5">
-                        <input
-                          type="url"
-                          value={postImageUrl}
-                          onChange={(e) => setPostImageUrl(e.target.value)}
-                          placeholder="https://example.com/photo.jpg"
-                          className="min-w-[180px] flex-1 rounded-lg border border-purple-500/30 bg-[#140D2B] px-3 py-1.5 text-xs text-white placeholder-purple-300/40 outline-none focus:border-pink-400/60"
-                        />
-                        <button
-                          type="button"
-                          onClick={handleApplyPostImageUrl}
-                          className="rounded-lg bg-[#FF2A85]/25 px-3 py-1.5 text-xs font-bold text-pink-200 hover:bg-[#FF2A85]/40"
-                        >
-                          Прикрепить
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setShowImageUrlInput(false);
-                            setPostError(null);
-                          }}
-                          className="rounded-lg px-2 py-1.5 text-xs text-purple-300 hover:text-white"
-                        >
-                          Скрыть
-                        </button>
-                      </div>
-                    )}
-
-                    {postImage && (
-                      <div className="relative overflow-hidden rounded-xl border border-pink-400/35 bg-[#090414] p-2">
-                        <img
-                          src={postImage}
-                          alt="Предпросмотр фото к посту"
-                          className="max-h-72 w-full rounded-lg object-contain"
-                        />
-                        <button
-                          type="button"
-                          onClick={handleClearPostImage}
-                          title="Удалить фото"
-                          className="absolute right-3.5 top-3.5 inline-flex items-center gap-1 rounded-lg border border-rose-400/40 bg-[#140D2B]/90 px-2.5 py-1 text-xs font-bold text-rose-200 hover:bg-rose-950"
-                        >
-                          <X className="h-3.5 w-3.5" />
-                          Убрать фото
-                        </button>
-                      </div>
-                    )}
-
-                    <div className="flex flex-wrap items-center justify-between gap-2">
-                      <div className="flex flex-wrap items-center gap-2">
-                        <label className="inline-flex cursor-pointer items-center gap-1.5 rounded-xl border border-pink-400/35 bg-[#24103B] px-3 py-1.5 text-xs font-bold text-pink-200 hover:bg-[#331552]">
-                          <ImagePlus className="h-3.5 w-3.5" />
-                          Фото с устройства
-                          <input
-                            type="file"
-                            accept="image/*"
-                            onChange={handlePostImageFileChange}
-                            className="hidden"
-                          />
-                        </label>
-
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setShowImageUrlInput((v) => !v);
-                            setPostError(null);
-                          }}
-                          className="rounded-xl border border-purple-500/30 bg-[#090414] px-3 py-1.5 text-xs font-semibold text-purple-200 hover:border-pink-400/50 hover:text-white"
-                        >
-                          По ссылке
-                        </button>
-
-                        <span className="hidden text-xs text-purple-300/70 sm:inline">
-                          • до 2.5 МБ
-                        </span>
-                      </div>
-
-                      <button
-                        type="submit"
-                        disabled={!postInput.trim() && !postImage}
-                        className="inline-flex items-center gap-1.5 rounded-xl bg-gradient-to-r from-[#9D4EDD] to-[#FF2A85] px-4 py-2 text-xs font-bold text-white shadow-md transition hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-40"
-                      >
-                        <Send className="h-3.5 w-3.5" />
-                        Опубликовать
-                      </button>
-                    </div>
-                  </form>
-
-                  <div className="space-y-4">
-                    {roomPosts.length === 0 ? (
-                      <div className="rounded-2xl border border-dashed border-purple-500/25 bg-[#140D2B]/50 p-8 text-center text-sm text-purple-200/70">
-                        В канале #{activeRoom.name} пока пусто. Напиши первый
-                        пост выше.
-                      </div>
-                    ) : (
-                      roomPosts.map((post) => {
-                        const isCommentsOpen = !!openComments[post.id];
-                        const draftValue = commentDrafts[post.id] ?? "";
-                        const authorAccount = accountByHandle.get(
-                          safeLower(post.handle)
-                        );
-                        const liveAvatar =
-                          authorAccount?.avatar ?? post.avatar ?? null;
-                        const isAuthor =
-                          !!currentUserHandleLower &&
-                          safeLower(post.handle) === currentUserHandleLower;
-                        const isEditing = editingPostId === post.id;
-                        const mentionsMe = textMentionsHandle(
-                          post.text,
-                          currentUserHandle
-                        );
-                        const repostSnapshot = post.repostOf ?? null;
-
-                        const hasEgg = hasEasterEggForPost(post.id);
-                        const pullVal = hasEgg ? postPeelMap[post.id] ?? 0 : 0;
-                        const isPeeledCompletely = hasEgg && pullVal >= 100000;
-                        const peelCutPx = Math.min(
-                          260,
-                          Math.round(34 + (pullVal / 100000) * 226)
-                        );
-
-                        if (isPeeledCompletely) {
-                          return (
-                            <PostPeelUnderlay
-                              key={post.id}
-                              pullValue={pullVal}
-                              onReset={() =>
-                                setPostPeelMap((prev) => ({
-                                  ...prev,
-                                  [post.id]: 0,
-                                }))
-                              }
-                            />
-                          );
-                        }
-
-                        return (
-                          <div
-                            key={post.id}
-                            className="relative overflow-hidden rounded-2xl"
-                          >
-                            {hasEgg && <PostPeelUnderlay pullValue={pullVal} />}
-
-                            <article
-                              style={
-                                hasEgg && pullVal > 0
-                                  ? {
-                                      clipPath: `polygon(0 0, 100% 0, 100% calc(100% - ${peelCutPx}px), calc(100% - ${peelCutPx}px) 100%, 0 100%)`,
-                                    }
-                                  : undefined
-                              }
-                              className={`relative z-10 rounded-2xl border p-4 space-y-3 transition-[border-color,background-color] ${
-                                post.pinned
-                                  ? "border-amber-400/45 bg-gradient-to-br from-[#1C1136] to-[#140D2B]"
-                                  : mentionsMe
-                                  ? "border-pink-400/45 bg-[#190F33]/95"
-                                  : "border-fuchsia-500/20 bg-[#140D2B]/85"
-                              }`}
-                            >
-                              {post.pinned && (
-                                <div className="flex items-center gap-1.5 text-[11px] font-extrabold uppercase tracking-wider text-amber-300">
-                                  <Pin className="h-3.5 w-3.5" />
-                                  Закреплённый пост канала
-                                </div>
-                              )}
-
-                              <div className="flex items-start justify-between gap-3">
-                                <div className="flex items-center gap-2.5">
-                                  <AvatarBadge
-                                    name={post.author}
-                                    src={liveAvatar}
-                                    size="md"
-                                    presence={authorAccount?.presence}
-                                  />
-                                  <div className="flex flex-wrap items-center gap-1.5">
-                                    <button
-                                      type="button"
-                                      onClick={() => openUserProfile(post.handle)}
-                                      className="text-sm font-extrabold text-white hover:text-[#FF70B8] transition"
-                                    >
-                                      {post.author}
-                                    </button>
-                                    <VerifiedBadge
-                                      account={authorAccount}
-                                      size="sm"
-                                    />
-                                    <button
-                                      type="button"
-                                      onClick={() => openUserProfile(post.handle)}
-                                      className="text-xs text-pink-300/80 hover:underline"
-                                    >
-                                      {post.handle}
-                                    </button>
-                                    <span className="text-xs text-purple-300/60">
-                                      • {post.createdAt}
-                                    </span>
-                                    {post.editedAt && (
-                                      <span className="rounded bg-white/5 px-1.5 py-0.5 text-[10px] text-purple-300/70">
-                                        изменено в {post.editedAt}
-                                      </span>
-                                    )}
-                                  </div>
-                                </div>
-
-                                <div className="flex items-center gap-1">
-                                  <button
-                                    type="button"
-                                    onClick={() => handleTogglePinPost(post.id)}
-                                    title={
-                                      post.pinned
-                                        ? "Открепить пост"
-                                        : "Закрепить в шапке канала"
-                                    }
-                                    className={`rounded-lg p-1.5 transition ${
-                                      post.pinned
-                                        ? "bg-amber-400/20 text-amber-300"
-                                        : "text-purple-300/60 hover:bg-white/10 hover:text-amber-200"
-                                    }`}
-                                  >
-                                    <Pin className="h-4 w-4" />
-                                  </button>
-
-                                  {isAuthor && (
-                                    <button
-                                      type="button"
-                                      onClick={() => handleStartEditPost(post)}
-                                      title="Изменить пост"
-                                      className="rounded-lg p-1.5 text-purple-300/60 hover:bg-white/10 hover:text-pink-200"
-                                    >
-                                      <Pencil className="h-4 w-4" />
-                                    </button>
-                                  )}
-
-                                  <button
-                                    type="button"
-                                    onClick={() => handleDeletePost(post.id)}
-                                    title="Удалить пост"
-                                    className="rounded-lg p-1.5 text-purple-300/60 hover:bg-rose-500/15 hover:text-rose-300"
-                                  >
-                                    <Trash2 className="h-4 w-4" />
-                                  </button>
-                                </div>
-                              </div>
-
-                              {isEditing ? (
-                                <div className="space-y-2 rounded-xl border border-pink-400/35 bg-[#090414] p-3">
-                                  <textarea
-                                    rows={3}
-                                    value={editingPostText}
-                                    onChange={(e) =>
-                                      setEditingPostText(e.target.value)
-                                    }
-                                    className="w-full resize-none rounded-lg border border-purple-500/30 bg-[#140D2B] p-2.5 text-sm text-white outline-none focus:border-pink-400/70"
-                                  />
-                                  <div className="flex justify-end gap-2">
-                                    <button
-                                      type="button"
-                                      onClick={() => setEditingPostId(null)}
-                                      className="rounded-lg border border-purple-500/30 px-3 py-1 text-xs font-semibold text-purple-200 hover:text-white"
-                                    >
-                                      Отмена
-                                    </button>
-                                    <button
-                                      type="button"
-                                      onClick={() => handleSaveEditPost(post.id)}
-                                      className="inline-flex items-center gap-1 rounded-lg bg-gradient-to-r from-[#9D4EDD] to-[#FF2A85] px-3 py-1 text-xs font-bold text-white"
-                                    >
-                                      <Check className="h-3.5 w-3.5" />
-                                      Сохранить
-                                    </button>
-                                  </div>
-                                </div>
-                              ) : (
-                                post.text && (
-                                  <p className="whitespace-pre-wrap text-sm leading-relaxed text-purple-100">
-                                    <RichTextWithMentions
-                                      text={post.text}
-                                      knownHandles={knownHandlesSet}
-                                      currentUserHandle={currentUserHandle}
-                                      onSelectHandle={openUserProfile}
-                                    />
-                                  </p>
-                                )
-                              )}
-
-                              {post.image && (
-                                <div className="group relative overflow-hidden rounded-xl border border-fuchsia-500/25 bg-[#090414]">
-                                  <img
-                                    src={post.image}
-                                    alt={`Фотография от ${post.author}`}
-                                    onClick={() =>
-                                      setLightboxImage(post.image || null)
-                                    }
-                                    className="max-h-[460px] w-full cursor-zoom-in object-contain"
-                                  />
-                                  <button
-                                    type="button"
-                                    onClick={() =>
-                                      setLightboxImage(post.image || null)
-                                    }
-                                    title="Открыть в полный размер"
-                                    className="absolute right-2.5 top-2.5 inline-flex items-center gap-1 rounded-lg border border-white/15 bg-[#090414]/80 px-2 py-1 text-[11px] font-semibold text-purple-100 opacity-90 hover:bg-[#140D2B]"
-                                  >
-                                    <Maximize2 className="h-3 w-3" />
-                                    Полный экран
-                                  </button>
-                                </div>
-                              )}
-
-                              {/* Карточка репоста */}
-                              {repostSnapshot && (
-                                <div className="rounded-xl border border-purple-500/30 bg-[#090414]/85 p-3.5 space-y-2">
-                                  <div className="flex flex-wrap items-center justify-between gap-2 text-xs">
-                                    <span className="inline-flex items-center gap-1.5 font-bold text-pink-200">
-                                      <Forward className="h-3.5 w-3.5 text-[#FF70B8]" />
-                                      <button
-                                        type="button"
-                                        onClick={() =>
-                                          openUserProfile(repostSnapshot.handle)
-                                        }
-                                        className="hover:underline"
-                                      >
-                                        {repostSnapshot.author} (
-                                        {repostSnapshot.handle})
-                                      </button>
-                                    </span>
-                                    <span className="text-purple-300/65">
-                                      из #{repostSnapshot.originalRoomId} •{" "}
-                                      {repostSnapshot.createdAt}
-                                    </span>
-                                  </div>
-                                  {repostSnapshot.text && (
-                                    <p className="whitespace-pre-wrap text-xs leading-relaxed text-purple-100/90">
-                                      <RichTextWithMentions
-                                        text={repostSnapshot.text}
-                                        knownHandles={knownHandlesSet}
-                                        currentUserHandle={currentUserHandle}
-                                        onSelectHandle={openUserProfile}
-                                      />
-                                    </p>
-                                  )}
-                                  {repostSnapshot.image && (
-                                    <img
-                                      src={repostSnapshot.image}
-                                      alt="Вложение репоста"
-                                      onClick={() =>
-                                        setLightboxImage(
-                                          repostSnapshot.image || null
-                                        )
-                                      }
-                                      className="max-h-60 w-full cursor-zoom-in rounded-lg object-contain bg-black/40"
-                                    />
-                                  )}
-                                </div>
-                              )}
-
-                              {/* Реакции эмодзи */}
-                              <ReactionBar
-                                reactions={post.reactions}
-                                currentUserHandle={currentUserHandle}
-                                onToggle={(emoji) =>
-                                  handleTogglePostReaction(post.id, emoji)
-                                }
-                              />
-
-                              <div className="flex flex-wrap items-center gap-2.5 border-t border-purple-500/15 pt-2.5 text-xs">
-                                <button
-                                  type="button"
-                                  onClick={() => handleToggleLike(post.id)}
-                                  className={`inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1 font-semibold transition ${
-                                    post.likedByMe
-                                      ? "bg-[#FF2A85]/25 text-[#FF70B8]"
-                                      : "bg-white/5 text-purple-200/80 hover:bg-white/10"
-                                  }`}
-                                >
-                                  <Heart
-                                    className={`h-3.5 w-3.5 ${
-                                      post.likedByMe
-                                        ? "fill-[#FF2A85] text-[#FF2A85]"
-                                        : ""
-                                    }`}
-                                  />
-                                  {post.likes}
-                                </button>
-
-                                <button
-                                  type="button"
-                                  onClick={() =>
-                                    setOpenComments((prev) => ({
-                                      ...prev,
-                                      [post.id]: !prev[post.id],
-                                    }))
-                                  }
-                                  className="inline-flex items-center gap-1.5 rounded-lg bg-white/5 px-2.5 py-1 font-semibold text-purple-200/80 hover:bg-white/10"
-                                >
-                                  <MessageSquare className="h-3.5 w-3.5 text-pink-300" />
-                                  Комментарии ({(post.comments || []).length})
-                                </button>
-
-                                <button
-                                  type="button"
-                                  onClick={() => handleOpenRepost(post)}
-                                  className="inline-flex items-center gap-1.5 rounded-lg bg-white/5 px-2.5 py-1 font-semibold text-purple-200/80 hover:bg-white/10 hover:text-pink-200"
-                                >
-                                  <Forward className="h-3.5 w-3.5 text-pink-300" />
-                                  Поделиться в канал
-                                </button>
-                              </div>
-
-                              {isCommentsOpen && (
-                                <div className="space-y-2.5 border-t border-purple-500/15 pt-3">
-                                  {(post.comments || []).map((c) => {
-                                    const commentAccount = accountByHandle.get(
-                                      safeLower(c.handle)
-                                    );
-                                    const commentAvatar =
-                                      commentAccount?.avatar ?? c.avatar ?? null;
-
-                                    return (
-                                      <div
-                                        key={c.id}
-                                        className="rounded-xl bg-[#090414]/85 px-3 py-2 text-xs"
-                                      >
-                                        <div className="flex items-center justify-between text-purple-300/75">
-                                          <button
-                                            type="button"
-                                            onClick={() =>
-                                              openUserProfile(c.handle)
-                                            }
-                                            className="flex items-center gap-2 font-bold text-pink-200 hover:underline text-left"
-                                          >
-                                            <AvatarBadge
-                                              name={c.author}
-                                              src={commentAvatar}
-                                              size="sm"
-                                              presence={commentAccount?.presence}
-                                            />
-                                            <span className="inline-flex items-center gap-1">
-                                              <span>{c.author}</span>
-                                              <VerifiedBadge
-                                                account={commentAccount}
-                                                size="sm"
-                                              />
-                                              <span className="font-normal text-pink-300/70">
-                                                {c.handle}
-                                              </span>
-                                            </span>
-                                          </button>
-                                          <span>{c.createdAt}</span>
-                                        </div>
-                                        <p className="mt-1.5 pl-9 text-purple-100">
-                                          <RichTextWithMentions
-                                            text={c.text}
-                                            knownHandles={knownHandlesSet}
-                                            currentUserHandle={currentUserHandle}
-                                            onSelectHandle={openUserProfile}
-                                          />
-                                        </p>
-                                      </div>
-                                    );
-                                  })}
-
-                                  <form
-                                    onSubmit={(e) => handleAddComment(e, post.id)}
-                                    className="flex items-center gap-2"
-                                  >
-                                    <input
-                                      type="text"
-                                      value={draftValue}
-                                      onChange={(e) =>
-                                        setCommentDrafts((prev) => ({
-                                          ...prev,
-                                          [post.id]: e.target.value,
-                                        }))
-                                      }
-                                      placeholder="Написать комментарий (можно с @handle)..."
-                                      className="flex-1 rounded-xl border border-purple-500/25 bg-[#090414] px-3 py-1.5 text-xs text-white placeholder-purple-300/40 outline-none focus:border-pink-400/60"
-                                    />
-                                    <button
-                                      type="submit"
-                                      disabled={!draftValue.trim()}
-                                      className="rounded-xl bg-[#FF2A85]/25 px-3 py-1.5 text-xs font-bold text-pink-200 hover:bg-[#FF2A85]/40 disabled:opacity-40"
-                                    >
-                                      Ответить
-                                    </button>
-                                  </form>
-                                </div>
-                              )}
-                            </article>
-
-                            {hasEgg && (
-                              <PostCornerPeelHandle
-                                pullValue={pullVal}
-                                onPullChange={(updater) =>
-                                  setPostPeelMap((prev) => {
-                                    const current = prev[post.id] ?? 0;
-                                    const next =
-                                      typeof updater === "function"
-                                        ? updater(current)
-                                        : updater;
-                                    return { ...prev, [post.id]: next };
-                                  })
-                                }
-                              />
-                            )}
-                          </div>
-                        );
-                      })
-                    )}
-                  </div>
-                </>
-              ) : (
-                <div className="rounded-2xl border border-fuchsia-500/25 bg-[#140D2B]/90 p-4 space-y-4">
-                  {/* Закреплённое сообщение в шапке чата */}
-                  {pinnedRoomMessage && (
-                    <div className="flex items-start justify-between gap-3 rounded-xl border border-amber-400/40 bg-amber-950/25 px-3.5 py-2.5 text-xs">
-                      <div className="min-w-0 space-y-0.5">
-                        <div className="flex items-center gap-1.5 font-extrabold text-amber-300">
-                          <Pin className="h-3.5 w-3.5 shrink-0" />
-                          <span>
-                            Закреплено • {pinnedRoomMessage.author} (
-                            {pinnedRoomMessage.handle})
-                          </span>
-                        </div>
-                        <p className="truncate text-purple-100">
-                          {pinnedRoomMessage.text}
-                        </p>
-                      </div>
-                      <button
-                        type="button"
-                        onClick={() =>
-                          handleTogglePinMessage(pinnedRoomMessage.id)
-                        }
-                        title="Открепить"
-                        className="shrink-0 rounded-lg p-1 text-amber-200/70 hover:bg-white/10 hover:text-white"
-                      >
-                        <X className="h-3.5 w-3.5" />
-                      </button>
-                    </div>
-                  )}
-
-                  <div className="max-h-[420px] space-y-2.5 overflow-y-auto pr-1">
-                    {roomMessages.length === 0 ? (
-                      <div className="rounded-xl border border-dashed border-purple-500/25 p-8 text-center text-sm text-purple-200/70">
-                        В чате #{activeRoom.name} пока нет сообщений. Начни
-                        первым.
-                      </div>
-                    ) : (
-                      roomMessages.map((msg) => {
-                        const msgAccount = accountByHandle.get(
-                          safeLower(msg.handle)
-                        );
-                        const msgAvatar =
-                          msgAccount?.avatar ?? msg.avatar ?? null;
-                        const isMsgAuthor =
-                          !!currentUserHandleLower &&
-                          safeLower(msg.handle) === currentUserHandleLower;
-                        const isEditingMsg = editingMsgId === msg.id;
-                        const mentionsMe = textMentionsHandle(
-                          msg.text,
-                          currentUserHandle
-                        );
-
-                        return (
-                          <div
-                            key={msg.id}
-                            className={`rounded-xl border px-3.5 py-2.5 space-y-2 transition ${
-                              mentionsMe
-                                ? "border-pink-400/55 bg-[#23103C]"
-                                : msg.pinned
-                                ? "border-amber-400/35 bg-[#191133]"
-                                : "border-purple-500/15 bg-[#090414]/90"
-                            }`}
-                          >
-                            <div className="flex items-center justify-between gap-2 text-xs">
-                              <div className="flex flex-wrap items-center gap-2">
-                                <button
-                                  type="button"
-                                  onClick={() => openUserProfile(msg.handle)}
-                                  className="flex items-center gap-2 font-bold text-pink-300 hover:underline text-left"
-                                >
-                                  <AvatarBadge
-                                    name={msg.author}
-                                    src={msgAvatar}
-                                    size="sm"
-                                    presence={msgAccount?.presence}
-                                  />
-                                  <span className="inline-flex items-center gap-1">
-                                    <span>{msg.author}</span>
-                                    <VerifiedBadge
-                                      account={msgAccount}
-                                      size="sm"
-                                    />
-                                    <span className="font-normal text-purple-300/70">
-                                      {msg.handle}
-                                    </span>
-                                  </span>
-                                </button>
-
-                                {mentionsMe && (
-                                  <span className="inline-flex items-center gap-0.5 rounded-full bg-[#FF2A85]/25 px-2 py-0.5 text-[10px] font-bold text-pink-200">
-                                    <AtSign className="h-2.5 w-2.5" />
-                                    упоминание
-                                  </span>
-                                )}
-
-                                {msg.editedAt && (
-                                  <span className="text-[10px] text-purple-300/60">
-                                    (изм. {msg.editedAt})
-                                  </span>
-                                )}
-                              </div>
-
-                              <div className="flex items-center gap-1">
-                                <span className="mr-1 text-purple-300/60">
-                                  {msg.createdAt}
-                                </span>
-                                <button
-                                  type="button"
-                                  onClick={() => handleTogglePinMessage(msg.id)}
-                                  title={
-                                    msg.pinned
-                                      ? "Открепить сообщение"
-                                      : "Закрепить в шапке чата"
-                                  }
-                                  className={`rounded p-1 transition ${
-                                    msg.pinned
-                                      ? "text-amber-300"
-                                      : "text-purple-300/50 hover:bg-white/10 hover:text-amber-200"
-                                  }`}
-                                >
-                                  <Pin className="h-3.5 w-3.5" />
-                                </button>
-                                {isMsgAuthor && (
-                                  <button
-                                    type="button"
-                                    onClick={() => handleStartEditMessage(msg)}
-                                    title="Изменить сообщение"
-                                    className="rounded p-1 text-purple-300/50 hover:bg-white/10 hover:text-pink-200"
-                                  >
-                                    <Pencil className="h-3.5 w-3.5" />
-                                  </button>
-                                )}
-                                <button
-                                  type="button"
-                                  onClick={() => handleDeleteMessage(msg.id)}
-                                  title="Удалить сообщение"
-                                  className="rounded p-1 text-purple-300/50 hover:bg-rose-500/15 hover:text-rose-300"
-                                >
-                                  <Trash2 className="h-3.5 w-3.5" />
-                                </button>
-                              </div>
-                            </div>
-
-                            {isEditingMsg ? (
-                              <div className="flex items-center gap-2 pl-9">
-                                <input
-                                  type="text"
-                                  value={editingMsgText}
-                                  onChange={(e) =>
-                                    setEditingMsgText(e.target.value)
-                                  }
-                                  className="flex-1 rounded-lg border border-pink-400/50 bg-[#140D2B] px-2.5 py-1 text-sm text-white outline-none"
-                                />
-                                <button
-                                  type="button"
-                                  onClick={() => handleSaveEditMessage(msg.id)}
-                                  className="rounded-lg bg-gradient-to-r from-[#9D4EDD] to-[#FF2A85] px-2.5 py-1 text-xs font-bold text-white"
-                                >
-                                  Ок
-                                </button>
-                                <button
-                                  type="button"
-                                  onClick={() => setEditingMsgId(null)}
-                                  className="rounded-lg px-2 py-1 text-xs text-purple-300 hover:text-white"
-                                >
-                                  Отмена
-                                </button>
-                              </div>
-                            ) : (
-                              <p className="pl-9 text-sm text-purple-100">
-                                <RichTextWithMentions
-                                  text={msg.text}
-                                  knownHandles={knownHandlesSet}
-                                  currentUserHandle={currentUserHandle}
-                                  onSelectHandle={openUserProfile}
-                                />
-                              </p>
-                            )}
-
-                            <div className="pl-9">
-                              <ReactionBar
-                                reactions={msg.reactions}
-                                currentUserHandle={currentUserHandle}
-                                onToggle={(emoji) =>
-                                  handleToggleMessageReaction(msg.id, emoji)
-                                }
-                              />
-                            </div>
-                          </div>
-                        );
-                      })
-                    )}
-                  </div>
-
-                  <form onSubmit={handleSendChat} className="flex items-center gap-2">
-                    <input
-                      type="text"
-                      value={chatInput}
-                      onChange={(e) => setChatInput(e.target.value)}
-                      placeholder={`Сообщение в #${activeRoom.name} (упоминай через @handle)...`}
-                      className="flex-1 rounded-xl border border-purple-500/25 bg-[#090414] px-3.5 py-2 text-sm text-white placeholder-purple-300/40 outline-none focus:border-pink-400/60"
-                    />
-                    <button
-                      type="submit"
-                      disabled={!chatInput.trim()}
-                      className="inline-flex items-center gap-1.5 rounded-xl bg-gradient-to-r from-[#9D4EDD] to-[#FF2A85] px-4 py-2 text-xs font-bold text-white shadow-md transition hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-40"
-                    >
-                      <Send className="h-3.5 w-3.5" />
-                      Отправить
-                    </button>
-                  </form>
-                </div>
-              )}
-            </section>
-          </div>
-        )}
-      </div>
-
-      {/* Модальное окно репоста в другой канал */}
-      {currentUser && repostingPost && (
-        <div
-          onClick={() => setRepostingPost(null)}
-          className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 p-4 backdrop-blur-sm"
-        >
-          <form
-            onClick={(e) => e.stopPropagation()}
-            onSubmit={handleConfirmRepost}
-            className="w-full max-w-lg rounded-2xl border border-pink-400/40 bg-[#140D2B] p-5 space-y-4 shadow-2xl"
-          >
-            <div className="flex items-center justify-between">
-              <h3 className="flex items-center gap-2 text-sm font-extrabold uppercase tracking-wider text-pink-300">
-                <Forward className="h-4 w-4" />
-                Поделиться постом в канал
-              </h3>
-              <button
-                type="button"
-                onClick={() => setRepostingPost(null)}
-                className="rounded-lg p-1 text-purple-300 hover:bg-white/10 hover:text-white"
-              >
-                <X className="h-4 w-4" />
-              </button>
-            </div>
-
-            <label className="block space-y-1.5 text-xs">
-              <span className="font-bold text-pink-200">Выбери канал</span>
-              <select
-                value={repostTargetRoomId}
-                onChange={(e) => setRepostTargetRoomId(e.target.value)}
-                className="w-full rounded-xl border border-purple-500/35 bg-[#090414] px-3 py-2 text-sm text-white outline-none focus:border-pink-400"
-              >
-                {rooms.map((r) => (
-                  <option key={r.id} value={r.id}>
-                    #{r.name}
-                  </option>
-                ))}
-              </select>
-            </label>
-
-            <label className="block space-y-1.5 text-xs">
-              <span className="font-bold text-pink-200">
-                Твой комментарий к репосту (необязательно)
-              </span>
-              <textarea
-                rows={2}
-                value={repostNote}
-                onChange={(e) => setRepostNote(e.target.value)}
-                placeholder="Добавь пару слов или @упоминание..."
-                className="w-full resize-none rounded-xl border border-purple-500/30 bg-[#090414] p-2.5 text-sm text-white placeholder-purple-300/40 outline-none focus:border-pink-400"
+              <input
+                type="text"
+                value={addAccUsername}
+                onChange={(e) => setAddAccUsername(e.target.value)}
+                placeholder="Имя"
+                className="w-full rounded-xl border border-purple-500/25 bg-[#090414] px-3 py-2 text-xs text-white placeholder-purple-300/40 focus:border-[#FF2A85] focus:outline-none"
               />
-            </label>
-
-            <div className="rounded-xl border border-purple-500/25 bg-[#090414]/90 p-3 text-xs space-y-1">
-              <div className="font-bold text-pink-200">
-                Оригинал: {repostingPost.author} ({repostingPost.handle}) из #
-                {repostingPost.roomId}
+              <input
+                type="text"
+                value={addAccHandle}
+                onChange={(e) => setAddAccHandle(e.target.value)}
+                placeholder="@handle"
+                className="w-full rounded-xl border border-purple-500/25 bg-[#090414] px-3 py-2 text-xs text-white placeholder-purple-300/40 focus:border-[#FF2A85] focus:outline-none"
+              />
+              <input
+                type="email"
+                value={addAccEmail}
+                onChange={(e) => setAddAccEmail(e.target.value)}
+                placeholder="you@gmail.com"
+                className="w-full rounded-xl border border-purple-500/25 bg-[#090414] px-3 py-2 text-xs text-white placeholder-purple-300/40 focus:border-[#FF2A85] focus:outline-none"
+              />
+              <div className="grid grid-cols-2 gap-2">
+                <input
+                  type="password"
+                  value={addAccPassword}
+                  onChange={(e) => setAddAccPassword(e.target.value)}
+                  placeholder="Пароль"
+                  className="w-full rounded-xl border border-purple-500/25 bg-[#090414] px-3 py-2 text-xs text-white placeholder-purple-300/40 focus:border-[#FF2A85] focus:outline-none"
+                />
+                <input
+                  type="password"
+                  value={addAccPasswordConfirm}
+                  onChange={(e) => setAddAccPasswordConfirm(e.target.value)}
+                  placeholder="Повтор пароля"
+                  className="w-full rounded-xl border border-purple-500/25 bg-[#090414] px-3 py-2 text-xs text-white placeholder-purple-300/40 focus:border-[#FF2A85] focus:outline-none"
+                />
               </div>
-              <p className="line-clamp-3 text-purple-100/80">
-                {repostingPost.text || "[Фотография]"}
-              </p>
-            </div>
 
-            <div className="flex justify-end gap-2">
-              <button
-                type="button"
-                onClick={() => setRepostingPost(null)}
-                className="rounded-xl border border-purple-500/30 bg-[#090414] px-4 py-2 text-xs font-bold text-purple-200 hover:text-white"
-              >
-                Отмена
-              </button>
               <button
                 type="submit"
-                className="inline-flex items-center gap-1.5 rounded-xl bg-gradient-to-r from-[#9D4EDD] to-[#FF2A85] px-4 py-2 text-xs font-extrabold text-white shadow-md hover:brightness-110"
+                disabled={addAccSubmitting}
+                className="w-full rounded-xl bg-gradient-to-r from-[#9D4EDD] to-[#FF2A85] py-2 text-xs font-extrabold text-white disabled:opacity-50"
               >
-                <Forward className="h-3.5 w-3.5" />
-                Опубликовать репост
+                {addAccSubmitting ? "Создаём..." : "Создать и войти"}
               </button>
-            </div>
-          </form>
+            </form>
+          </div>
         </div>
       )}
 
-      {/* Просмотр фотографии в полный размер */}
+      {inspectedHandle && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 p-4 backdrop-blur-sm">
+          <div className="w-full max-w-lg max-h-[85vh] overflow-y-auto rounded-2xl border border-purple-500/30 bg-[#130926] shadow-2xl">
+            <div
+              className="relative h-28 w-full"
+              style={
+                inspectedAccount?.banner?.startsWith("data:")
+                  ? {
+                      backgroundImage: `url(${inspectedAccount.banner})`,
+                      backgroundSize: "cover",
+                      backgroundPosition: "center",
+                    }
+                  : {
+                      background:
+                        inspectedAccount?.banner || BANNER_PRESETS[0].gradient,
+                    }
+              }
+            >
+              <button
+                type="button"
+                onClick={() => setInspectedHandle(null)}
+                className="absolute top-3 right-3 rounded-full bg-[#090414]/80 p-1.5 text-white hover:bg-white/20"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+
+            <div className="p-5 space-y-4">
+              <div className="flex items-end justify-between gap-3 -mt-12">
+                <div className="flex items-end gap-3">
+                  <AvatarBadge
+                    name={inspectedAccount?.username || inspectedHandle}
+                    src={inspectedAccount?.avatar || null}
+                    size="lg"
+                    presence={inspectedAccount?.presence}
+                  />
+                  <div className="pb-1">
+                    <div className="flex items-center gap-1.5">
+                      <h3 className="text-lg font-black text-white">
+                        {inspectedAccount?.username || inspectedHandle}
+                      </h3>
+                      <VerifiedBadge account={inspectedAccount} size="md" />
+                    </div>
+                    <div className="flex items-center gap-1.5 text-xs text-purple-200/75">
+                      <AtSign className="h-3 w-3 text-pink-300" />
+                      <span>{inspectedHandle.replace(/^@/, "")}</span>
+                      <button
+                        type="button"
+                        onClick={() => handleCopyHandle(inspectedHandle)}
+                        className="inline-flex items-center gap-1 rounded bg-white/10 px-1.5 py-0.5 text-[10px] font-bold text-white hover:bg-white/20"
+                      >
+                        {copiedHandle ? (
+                          <>
+                            <Check className="h-2.5 w-2.5 text-emerald-300" />
+                            <span>Скопировано</span>
+                          </>
+                        ) : (
+                          <>
+                            <Copy className="h-2.5 w-2.5" />
+                            <span>Копировать</span>
+                          </>
+                        )}
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {inspectedAccount?.mood && (
+                <div className="rounded-xl border border-purple-500/20 bg-[#090414]/70 px-3 py-2 text-xs text-pink-200">
+                  Статус: {inspectedAccount.mood}
+                </div>
+              )}
+
+              {inspectedAccount?.bio && (
+                <p className="text-xs leading-relaxed text-purple-100/90">
+                  {inspectedAccount.bio}
+                </p>
+              )}
+
+              <div className="space-y-2 pt-2 border-t border-purple-500/15">
+                <div className="text-xs font-extrabold text-purple-200/80">
+                  Посты участника ({inspectedPosts.length})
+                </div>
+                {inspectedPosts.length === 0 ? (
+                  <p className="text-xs text-purple-200/60">
+                    Пока нет опубликованных постов.
+                  </p>
+                ) : (
+                  inspectedPosts.map((p) => (
+                    <div
+                      key={p.id}
+                      className="rounded-xl border border-purple-500/15 bg-[#090414]/75 p-3 text-xs space-y-1"
+                    >
+                      <div className="text-[11px] text-purple-200/60">
+                        {p.createdAt}
+                      </div>
+                      <p className="whitespace-pre-wrap text-white">
+                        {p.text || "Медиапост"}
+                      </p>
+                    </div>
+                  ))
+                )}
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
       {lightboxImage && (
         <div
           onClick={() => setLightboxImage(null)}
           className="fixed inset-0 z-50 flex items-center justify-center bg-black/85 p-4 backdrop-blur-sm"
         >
-          <div
+          <img
+            src={lightboxImage}
+            alt="Просмотр изображения"
             onClick={(e) => e.stopPropagation()}
-            className="relative max-h-[90vh] max-w-4xl overflow-hidden rounded-2xl border border-pink-400/35 bg-[#090414] p-2"
-          >
-            <img
-              src={lightboxImage}
-              alt="Просмотр фотографии"
-              className="max-h-[85vh] w-auto max-w-full rounded-xl object-contain"
-            />
-            <button
-              type="button"
-              onClick={() => setLightboxImage(null)}
-              title="Закрыть"
-              className="absolute right-4 top-4 inline-flex items-center gap-1 rounded-xl border border-white/15 bg-[#140D2B]/90 px-3 py-1.5 text-xs font-bold text-white hover:bg-[#24103B]"
-            >
-              <X className="h-4 w-4" />
-              Закрыть
-            </button>
-          </div>
+            className="max-h-[90vh] max-w-[92vw] rounded-2xl border border-purple-500/30 object-contain"
+          />
         </div>
       )}
-
-      <footer className="mt-16 border-t border-white/10 bg-[#07070c]/90 px-6 py-8 text-center text-sm text-zinc-300">
-        <p>Артём Лотников — основатель и программист.</p>
-        <p className="mt-1">Захар Лазебный — основатель и дизайнер.</p>
-        <p className="mt-1">Константин Сергиевич — программист и спонсор серверов.</p>
-      </footer>
-    </main>
+    </div>
   );
 }
