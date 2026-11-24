@@ -1,0 +1,16 @@
+@import "tailwindcss";
+
+:root {
+  --bg-space: #0b0719;
+  --bg-panel: #140d2b;
+  --accent-purple: #9d4edd;
+  --accent-pink: #ff2a85;
+  --text-main: #f8f5ff;
+}
+
+html,
+body {
+  background-color: var(--bg-space);
+  color: var(--text-main);
+  overflow-x: hidden;
+}
