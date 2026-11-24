@@ -2606,7 +2606,7 @@ export default function HomePage() {
       <div className="min-h-screen bg-[#090414] text-[#F8F5FF] flex items-center justify-center p-4">
         <div className="w-full max-w-md rounded-2xl border border-purple-500/25 bg-[#130926]/95 p-6 shadow-2xl">
           <div className="flex flex-col items-center text-center mb-5">
-            <SaturnMascot state={SATURN_DEFAULT} size={84} />
+            <SaturnMascot state={SATURN_DEFAULT}  onRevive={() => setSaturnState(SATURN_DEFAULT)} />
             <h1 className="mt-2 text-2xl font-black tracking-tight text-white">
               Aura Space
             </h1>
