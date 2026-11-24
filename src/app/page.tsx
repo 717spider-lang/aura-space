@@ -202,6 +202,44 @@ const MILESTONE_SUBSCRIBERS = 100_000;
 const MAX_POST_IMAGE_BYTES = 2_500_000;
 const MAX_BANNER_IMAGE_BYTES = 2_000_000;
 
+const CREATOR_ACCOUNTS_SEED: Array<{
+  id: string;
+  username: string;
+  handle: string;
+  email: string;
+  bio: string;
+  mood: string;
+  presence: PresenceKind;
+  banner: string;
+  friends: string[];
+  defaultPassword: string;
+}> = [
+  {
+    id: "creator-artem",
+    username: "Артём",
+    handle: "@artem",
+    email: "artem@auraspace.local",
+    bio: "Основатель и программист Aura Space.",
+    mood: "В сборке Aura Space",
+    presence: "online",
+    banner: BANNER_PRESETS[0].gradient,
+    friends: ["@zahar"],
+    defaultPassword: "aura2026",
+  },
+  {
+    id: "creator-zahar",
+    username: "Захар",
+    handle: "@zahar",
+    email: "zahar@auraspace.local",
+    bio: "Основатель и дизайнер Aura Space.",
+    mood: "Дизайн и эфир",
+    presence: "online",
+    banner: BANNER_PRESETS[3].gradient,
+    friends: ["@artem"],
+    defaultPassword: "aura2026",
+  },
+];
+
 const RTC_CONFIG: RTCConfiguration = {
   iceServers: [{ urls: "stun:stun.l.google.com:19302" }],
 };
@@ -367,6 +405,11 @@ function normalizeChannelSlug(raw: unknown): string {
     .slice(0, 24);
 }
 
+function isReservedCreatorHandle(handle: string): boolean {
+  const lower = safeLower(handle);
+  return CREATOR_ACCOUNTS_SEED.some((c) => safeLower(c.handle) === lower);
+}
+
 function hasVerifiedBadge(
   account?: Pick<UserAccount, "accountType" | "subscribers"> | null
 ): boolean {
@@ -451,9 +494,7 @@ function RichTextWithMentions({
               type="button"
               onClick={() => onSelectHandle(lower)}
               title={
-                isKnown
-                  ? `Открыть профиль ${lower}`
-                  : `Участник ${lower}`
+                isKnown ? `Открыть профиль ${lower}` : `Участник ${lower}`
               }
               className={`mx-0.5 inline-flex items-center rounded-md px-1.5 py-0.5 font-bold transition ${
                 isMe
@@ -683,7 +724,6 @@ export default function HomePage() {
   const [regUsername, setRegUsername] = useState("");
   const [regHandle, setRegHandle] = useState("");
   const [regEmail, setRegEmail] = useState("");
-  const [regAccountType, setRegAccountType] = useState<AccountKind>("official");
   const [regPassword, setRegPassword] = useState("");
   const [regPasswordConfirm, setRegPasswordConfirm] = useState("");
 
@@ -696,7 +736,6 @@ export default function HomePage() {
   const [addAccUsername, setAddAccUsername] = useState("");
   const [addAccHandle, setAddAccHandle] = useState("");
   const [addAccEmail, setAddAccEmail] = useState("");
-  const [addAccType, setAddAccType] = useState<AccountKind>("personal");
   const [addAccPassword, setAddAccPassword] = useState("");
   const [addAccPasswordConfirm, setAddAccPasswordConfirm] = useState("");
   const [addAccError, setAddAccError] = useState<string | null>(null);
@@ -718,8 +757,6 @@ export default function HomePage() {
   const [friendMessage, setFriendMessage] = useState<string | null>(null);
 
   const [profileUsername, setProfileUsername] = useState("");
-  const [profileAccountType, setProfileAccountType] =
-    useState<AccountKind>("official");
   const [profilePresence, setProfilePresence] = useState<PresenceKind>("online");
   const [profileMood, setProfileMood] = useState("");
   const [profileBio, setProfileBio] = useState("");
@@ -727,6 +764,7 @@ export default function HomePage() {
   const [profileBanner, setProfileBanner] = useState<string | null>(
     BANNER_PRESETS[0].gradient
   );
+  const [profileNewPassword, setProfileNewPassword] = useState("");
   const [profileError, setProfileError] = useState<string | null>(null);
   const [profileSaved, setProfileSaved] = useState(false);
 
@@ -800,137 +838,181 @@ export default function HomePage() {
   }, [getLocalPeerId]);
 
   useEffect(() => {
-    try {
-      let loadedAccounts: UserAccount[] = [];
-      const rawAccounts = window.localStorage.getItem(ACCOUNTS_KEY);
-      if (rawAccounts) {
-        const parsedAccounts = JSON.parse(rawAccounts);
-        if (Array.isArray(parsedAccounts)) {
-          loadedAccounts = parsedAccounts
-            .filter((acc): acc is UserAccount => !!acc && typeof acc === "object")
-            .map((acc) => ({
-              ...acc,
-              id:
-                typeof acc.id === "string"
-                  ? acc.id
-                  : `usr-${Math.random().toString(36).slice(2, 8)}`,
-              username:
-                typeof acc.username === "string" ? acc.username : "Участник",
-              handle:
-                typeof acc.handle === "string" && acc.handle.trim()
-                  ? normalizeHandle(acc.handle) || "@user"
-                  : "@user",
-              email: typeof acc.email === "string" ? acc.email : "",
-              accountType:
-                acc.accountType === "official" || acc.accountType === "personal"
-                  ? acc.accountType
-                  : "official",
-              subscribers:
-                typeof acc.subscribers === "number" &&
-                Number.isFinite(acc.subscribers)
-                  ? Math.max(0, Math.floor(acc.subscribers))
-                  : 0,
-              bio: typeof acc.bio === "string" ? acc.bio : "",
-              mood: typeof acc.mood === "string" ? acc.mood : "На орбите",
-              presence:
-                acc.presence === "online" ||
-                acc.presence === "building" ||
-                acc.presence === "orbit"
-                  ? acc.presence
-                  : "online",
-              lastActive:
-                typeof acc.lastActive === "string"
-                  ? acc.lastActive
-                  : "только что",
-              avatar: typeof acc.avatar === "string" ? acc.avatar : null,
-              banner:
-                typeof acc.banner === "string"
-                  ? acc.banner
-                  : BANNER_PRESETS[0].gradient,
-              friends: Array.isArray(acc.friends)
-                ? acc.friends.filter((f): f is string => typeof f === "string")
-                : [],
-              saturnState:
-                acc.saturnState === "blackhole" ||
-                acc.saturnState === "slow1" ||
-                (typeof acc.saturnState === "number" &&
-                  acc.saturnState >= 1 &&
-                  acc.saturnState <= 7)
-                  ? acc.saturnState
-                  : 1,
-              createdAt:
-                typeof acc.createdAt === "string" ? acc.createdAt : "сегодня",
-            }));
-          setAccounts(loadedAccounts);
+    let cancelled = false;
+
+    async function initStorage() {
+      try {
+        let loadedAccounts: UserAccount[] = [];
+        const rawAccounts = window.localStorage.getItem(ACCOUNTS_KEY);
+        if (rawAccounts) {
+          const parsedAccounts = JSON.parse(rawAccounts);
+          if (Array.isArray(parsedAccounts)) {
+            loadedAccounts = parsedAccounts
+              .filter(
+                (acc): acc is UserAccount => !!acc && typeof acc === "object"
+              )
+              .map((acc) => {
+                const normalizedH =
+                  typeof acc.handle === "string" && acc.handle.trim()
+                    ? normalizeHandle(acc.handle) || "@user"
+                    : "@user";
+                const isCreator = isReservedCreatorHandle(normalizedH);
+                return {
+                  ...acc,
+                  id:
+                    typeof acc.id === "string"
+                      ? acc.id
+                      : `usr-${Math.random().toString(36).slice(2, 8)}`,
+                  username:
+                    typeof acc.username === "string" ? acc.username : "Участник",
+                  handle: normalizedH,
+                  email: typeof acc.email === "string" ? acc.email : "",
+                  accountType: isCreator ? "official" : "personal",
+                  subscribers:
+                    typeof acc.subscribers === "number" &&
+                    Number.isFinite(acc.subscribers)
+                      ? Math.max(0, Math.floor(acc.subscribers))
+                      : 0,
+                  bio: typeof acc.bio === "string" ? acc.bio : "",
+                  mood: typeof acc.mood === "string" ? acc.mood : "На орбите",
+                  presence:
+                    acc.presence === "online" ||
+                    acc.presence === "building" ||
+                    acc.presence === "orbit"
+                      ? acc.presence
+                      : "online",
+                  lastActive:
+                    typeof acc.lastActive === "string"
+                      ? acc.lastActive
+                      : "только что",
+                  avatar: typeof acc.avatar === "string" ? acc.avatar : null,
+                  banner:
+                    typeof acc.banner === "string"
+                      ? acc.banner
+                      : BANNER_PRESETS[0].gradient,
+                  friends: Array.isArray(acc.friends)
+                    ? acc.friends.filter((f): f is string => typeof f === "string")
+                    : [],
+                  saturnState:
+                    acc.saturnState === "blackhole" ||
+                    acc.saturnState === "slow1" ||
+                    (typeof acc.saturnState === "number" &&
+                      acc.saturnState >= 1 &&
+                      acc.saturnState <= 7)
+                      ? acc.saturnState
+                      : 1,
+                  createdAt:
+                    typeof acc.createdAt === "string" ? acc.createdAt : "сегодня",
+                };
+              });
+          }
         }
-      }
 
-      const rawSession = window.localStorage.getItem(SESSION_KEY);
-      if (rawSession) {
-        setCurrentUserId(rawSession);
-      }
-
-      const rawLastLogin = window.localStorage.getItem(LAST_LOGIN_KEY);
-      if (rawLastLogin) {
-        setLoginIdentifier(rawLastLogin);
-      } else if (loadedAccounts.length > 0) {
-        setLoginIdentifier(loadedAccounts[loadedAccounts.length - 1].email);
-      }
-
-      const rawData = window.localStorage.getItem(DATA_KEY);
-      if (rawData) {
-        const parsedData = JSON.parse(rawData);
-        if (Array.isArray(parsedData.rooms) && parsedData.rooms.length > 0) {
-          setRooms(parsedData.rooms);
-        }
-        if (Array.isArray(parsedData.posts)) {
-          setPosts(
-            parsedData.posts
-              .filter((p: unknown): p is PostItem => !!p && typeof p === "object")
-              .map((p: PostItem) => ({
-                ...p,
-                author: typeof p.author === "string" ? p.author : "Участник",
-                handle:
-                  typeof p.handle === "string" && p.handle.trim()
-                    ? p.handle
-                    : "@user",
-                text: typeof p.text === "string" ? p.text : "",
-                comments: Array.isArray(p.comments) ? p.comments : [],
-              }))
+        // Встроенные аккаунты создателей: вход возможен только по паролю
+        for (const seed of CREATOR_ACCOUNTS_SEED) {
+          const exists = loadedAccounts.some(
+            (a) => safeLower(a.handle) === safeLower(seed.handle)
           );
+          if (!exists) {
+            const salt = generateSalt();
+            const passwordHash = await hashPassword(seed.defaultPassword, salt);
+            loadedAccounts.unshift({
+              id: seed.id,
+              username: seed.username,
+              handle: seed.handle,
+              email: seed.email,
+              accountType: "official",
+              subscribers: 0,
+              bio: seed.bio,
+              mood: seed.mood,
+              presence: seed.presence,
+              lastActive: "в сети",
+              avatar: null,
+              banner: seed.banner,
+              friends: seed.friends,
+              passwordHash,
+              salt,
+              saturnState: 1,
+              createdAt: "основание",
+            });
+          }
         }
-        if (Array.isArray(parsedData.messages)) {
-          setMessages(
-            parsedData.messages
-              .filter((m: unknown): m is ChatMessage => !!m && typeof m === "object")
-              .map((m: ChatMessage) => ({
-                ...m,
-                author: typeof m.author === "string" ? m.author : "Участник",
-                handle:
-                  typeof m.handle === "string" && m.handle.trim()
-                    ? m.handle
-                    : "@user",
-                text: typeof m.text === "string" ? m.text : "",
-              }))
-          );
+
+        if (cancelled) return;
+        setAccounts(loadedAccounts);
+
+        const rawSession = window.localStorage.getItem(SESSION_KEY);
+        if (rawSession && loadedAccounts.some((a) => a.id === rawSession)) {
+          setCurrentUserId(rawSession);
         }
-        if (typeof parsedData.activeRoomId === "string") {
-          setActiveRoomId(parsedData.activeRoomId);
+
+        const rawLastLogin = window.localStorage.getItem(LAST_LOGIN_KEY);
+        if (rawLastLogin) {
+          setLoginIdentifier(rawLastLogin);
         }
-        if (
-          parsedData.activeTab === "feed" ||
-          parsedData.activeTab === "chat" ||
-          parsedData.activeTab === "profile" ||
-          parsedData.activeTab === "friends"
-        ) {
-          setActiveTab(parsedData.activeTab);
+
+        const rawData = window.localStorage.getItem(DATA_KEY);
+        if (rawData) {
+          const parsedData = JSON.parse(rawData);
+          if (Array.isArray(parsedData.rooms) && parsedData.rooms.length > 0) {
+            setRooms(parsedData.rooms);
+          }
+          if (Array.isArray(parsedData.posts)) {
+            setPosts(
+              parsedData.posts
+                .filter((p: unknown): p is PostItem => !!p && typeof p === "object")
+                .map((p: PostItem) => ({
+                  ...p,
+                  author: typeof p.author === "string" ? p.author : "Участник",
+                  handle:
+                    typeof p.handle === "string" && p.handle.trim()
+                      ? p.handle
+                      : "@user",
+                  text: typeof p.text === "string" ? p.text : "",
+                  comments: Array.isArray(p.comments) ? p.comments : [],
+                }))
+            );
+          }
+          if (Array.isArray(parsedData.messages)) {
+            setMessages(
+              parsedData.messages
+                .filter((m: unknown): m is ChatMessage => !!m && typeof m === "object")
+                .map((m: ChatMessage) => ({
+                  ...m,
+                  author: typeof m.author === "string" ? m.author : "Участник",
+                  handle:
+                    typeof m.handle === "string" && m.handle.trim()
+                      ? m.handle
+                      : "@user",
+                  text: typeof m.text === "string" ? m.text : "",
+                }))
+            );
+          }
+          if (typeof parsedData.activeRoomId === "string") {
+            setActiveRoomId(parsedData.activeRoomId);
+          }
+          if (
+            parsedData.activeTab === "feed" ||
+            parsedData.activeTab === "chat" ||
+            parsedData.activeTab === "profile" ||
+            parsedData.activeTab === "friends"
+          ) {
+            setActiveTab(parsedData.activeTab);
+          }
+        }
+      } catch {
+        // Игнорируем ошибки чтения хранилища
+      } finally {
+        if (!cancelled) {
+          setHydrated(true);
         }
       }
-    } catch {
-      // Игнорируем ошибки чтения хранилища
-    } finally {
-      setHydrated(true);
     }
+
+    initStorage();
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   useEffect(() => {
@@ -978,6 +1060,15 @@ export default function HomePage() {
     [accounts, currentUserId]
   );
 
+  // В быстром переключении показываем только личные аккаунты (и текущий активный)
+  const quickSwitchAccounts = useMemo(
+    () =>
+      accounts.filter(
+        (acc) => acc.accountType !== "official" || acc.id === currentUserId
+      ),
+    [accounts, currentUserId]
+  );
+
   const currentUserHandle = currentUser?.handle ?? "";
   const currentUserHandleLower = safeLower(currentUserHandle);
 
@@ -995,12 +1086,12 @@ export default function HomePage() {
   useEffect(() => {
     if (!currentUser) return;
     setProfileUsername(currentUser.username || "");
-    setProfileAccountType(currentUser.accountType || "official");
     setProfilePresence(currentUser.presence || "online");
     setProfileMood(currentUser.mood || "На орбите");
     setProfileBio(currentUser.bio || "");
     setProfileAvatar(currentUser.avatar ?? null);
     setProfileBanner(currentUser.banner ?? BANNER_PRESETS[0].gradient);
+    setProfileNewPassword("");
     setProfileError(null);
   }, [currentUser]);
 
@@ -1590,6 +1681,9 @@ export default function HomePage() {
   function switchActiveAccount(accountId: string) {
     const target = accounts.find((a) => a.id === accountId);
     if (!target) return;
+    if (target.accountType === "official" && target.id !== currentUserId) {
+      return;
+    }
     setCurrentUserId(target.id);
     setAccounts((prev) =>
       prev.map((acc) =>
@@ -1736,7 +1830,7 @@ export default function HomePage() {
     setPostError(null);
   }
 
-  function handleSaveProfile(e: React.FormEvent) {
+  async function handleSaveProfile(e: React.FormEvent) {
     e.preventDefault();
     if (!currentUser) return;
     setProfileError(null);
@@ -1745,10 +1839,23 @@ export default function HomePage() {
     const nextName = profileUsername.trim();
     const nextMood = profileMood.trim() || "На орбите";
     const nextBio = profileBio.trim();
+    const nextPasswordRaw = profileNewPassword.trim();
 
     if (nextName.length < 2) {
       setProfileError("Имя должно быть не короче 2 символов.");
       return;
+    }
+
+    if (nextPasswordRaw && nextPasswordRaw.length < 6) {
+      setProfileError("Новый пароль должен быть не короче 6 символов.");
+      return;
+    }
+
+    let updatedSalt = currentUser.salt;
+    let updatedPasswordHash = currentUser.passwordHash;
+    if (nextPasswordRaw) {
+      updatedSalt = generateSalt();
+      updatedPasswordHash = await hashPassword(nextPasswordRaw, updatedSalt);
     }
 
     const activeHandleLower = safeLower(currentUser.handle);
@@ -1759,13 +1866,14 @@ export default function HomePage() {
           ? {
               ...acc,
               username: nextName,
-              accountType: profileAccountType,
               presence: profilePresence,
               lastActive: nowTimeLabel(),
               mood: nextMood,
               bio: nextBio,
               avatar: profileAvatar,
               banner: profileBanner,
+              salt: updatedSalt,
+              passwordHash: updatedPasswordHash,
             }
           : acc
       )
@@ -1796,6 +1904,7 @@ export default function HomePage() {
       )
     );
 
+    setProfileNewPassword("");
     setProfileSaved(true);
   }
 
@@ -1941,6 +2050,12 @@ export default function HomePage() {
       );
       return;
     }
+    if (isReservedCreatorHandle(cleanHandle)) {
+      setAddAccError(
+        `Хэндл ${cleanHandle} зарезервирован за создателем Aura Space.`
+      );
+      return;
+    }
     if (!cleanEmail || !cleanEmail.includes("@")) {
       setAddAccError("Введи корректный email.");
       return;
@@ -1981,10 +2096,10 @@ export default function HomePage() {
         username: cleanName,
         handle: cleanHandle,
         email: cleanEmail,
-        accountType: addAccType,
+        accountType: "personal",
         subscribers: 0,
         bio: "",
-        mood: addAccType === "official" ? "Официальный эфир" : "На орбите",
+        mood: "На орбите",
         presence: "online",
         lastActive: createdTime,
         avatar: null,
@@ -2034,6 +2149,12 @@ export default function HomePage() {
       );
       return;
     }
+    if (isReservedCreatorHandle(cleanHandle)) {
+      setAuthError(
+        `Хэндл ${cleanHandle} зарезервирован за создателем Aura Space.`
+      );
+      return;
+    }
     if (!cleanEmail || !cleanEmail.includes("@")) {
       setAuthError("Введи корректный email.");
       return;
@@ -2074,10 +2195,10 @@ export default function HomePage() {
         username: cleanName,
         handle: cleanHandle,
         email: cleanEmail,
-        accountType: regAccountType,
+        accountType: "personal",
         subscribers: 0,
         bio: "",
-        mood: regAccountType === "official" ? "Официальный эфир" : "На орбите",
+        mood: "На орбите",
         presence: "online",
         lastActive: createdTime,
         avatar: null,
@@ -2149,7 +2270,7 @@ export default function HomePage() {
           acc.id === found.id ? { ...acc, lastActive: nowTimeLabel() } : acc
         )
       );
-      setLoginIdentifier(found.email);
+      setLoginIdentifier(found.email || found.handle);
       try {
         if (found.email) {
           window.localStorage.setItem(LAST_LOGIN_KEY, found.email);
@@ -2528,17 +2649,17 @@ export default function HomePage() {
 
           {currentUser ? (
             <div className="flex flex-wrap items-center gap-2.5">
-              {accounts.length > 1 && (
+              {quickSwitchAccounts.length > 1 && (
                 <div className="flex items-center gap-1 rounded-xl border border-purple-500/30 bg-[#090414] p-1">
                   <Repeat className="ml-1.5 h-3.5 w-3.5 text-pink-300" />
-                  {accounts.map((acc) => {
+                  {quickSwitchAccounts.map((acc) => {
                     const active = acc.id === currentUser.id;
                     return (
                       <button
                         key={acc.id}
                         type="button"
                         onClick={() => switchActiveAccount(acc.id)}
-                        title={`${acc.username} (${acc.handle}) — ${accountBadgeLabel(acc.accountType)}`}
+                        title={`${acc.username} (${acc.handle})`}
                         className={`flex items-center gap-1.5 rounded-lg px-2 py-1 text-[11px] font-bold transition ${
                           active
                             ? "bg-gradient-to-r from-[#9D4EDD] to-[#FF2A85] text-white"
@@ -2568,7 +2689,7 @@ export default function HomePage() {
                 className="inline-flex items-center gap-1 rounded-xl border border-pink-400/40 bg-[#24103B] px-3 py-1.5 text-xs font-bold text-pink-200 hover:bg-[#331552]"
               >
                 <UserPlus className="h-3.5 w-3.5" />
-                + Аккаунт
+                + Личный аккаунт
               </button>
 
               <button
@@ -2857,16 +2978,16 @@ export default function HomePage() {
           </section>
         )}
 
-        {/* Блок добавления второго / личного / официального аккаунта без выхода */}
+        {/* Блок добавления дополнительного личного аккаунта без выхода */}
         {currentUser && showAddAccountModal && (
           <section className="rounded-2xl border border-pink-400/35 bg-[#140D2B]/95 p-5 space-y-4">
             <div className="flex items-center justify-between gap-2">
               <div>
                 <h3 className="text-sm font-extrabold uppercase tracking-wider text-pink-300">
-                  Добавить ещё один аккаунт (официальный или личный)
+                  Добавить личный аккаунт
                 </h3>
                 <p className="text-xs text-purple-200/75">
-                  Создателю галочка выдаётся автоматически; личным аккаунтам — от 100 000 подписчиков.
+                  Регистрация доступна только для личных аккаунтов.
                 </p>
               </div>
               <button
@@ -2885,31 +3006,6 @@ export default function HomePage() {
             )}
 
             <form onSubmit={handleCreateExtraAccount} className="space-y-3.5">
-              <div className="flex gap-2 rounded-xl border border-purple-500/25 bg-[#090414] p-1 text-xs font-bold">
-                <button
-                  type="button"
-                  onClick={() => setAddAccType("official")}
-                  className={`flex-1 rounded-lg py-1.5 transition ${
-                    addAccType === "official"
-                      ? "bg-gradient-to-r from-[#9D4EDD] to-[#FF2A85] text-white"
-                      : "text-purple-200/75 hover:text-white"
-                  }`}
-                >
-                  Официальный (Создатель — автогалочка)
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setAddAccType("personal")}
-                  className={`flex-1 rounded-lg py-1.5 transition ${
-                    addAccType === "personal"
-                      ? "bg-gradient-to-r from-[#9D4EDD] to-[#FF2A85] text-white"
-                      : "text-purple-200/75 hover:text-white"
-                  }`}
-                >
-                  Личный аккаунт
-                </button>
-              </div>
-
               <div className="grid gap-3 sm:grid-cols-3">
                 <label className="block space-y-1 text-xs">
                   <span className="font-bold text-pink-200">Имя</span>
@@ -2984,7 +3080,7 @@ export default function HomePage() {
                   disabled={addAccSubmitting}
                   className="rounded-xl bg-gradient-to-r from-[#9D4EDD] to-[#FF2A85] px-4 py-2 text-xs font-extrabold text-white shadow-md hover:brightness-110 disabled:opacity-50"
                 >
-                  {addAccSubmitting ? "Создаём..." : "Создать и войти в него"}
+                  {addAccSubmitting ? "Создаём..." : "Создать личный аккаунт"}
                 </button>
               </div>
             </form>
@@ -3074,29 +3170,8 @@ export default function HomePage() {
                 </form>
               ) : (
                 <form onSubmit={handleRegister} className="space-y-4">
-                  <div className="flex gap-2 rounded-xl border border-purple-500/25 bg-[#090414] p-1 text-xs font-bold">
-                    <button
-                      type="button"
-                      onClick={() => setRegAccountType("official")}
-                      className={`flex-1 rounded-lg py-1.5 transition ${
-                        regAccountType === "official"
-                          ? "bg-gradient-to-r from-[#9D4EDD] to-[#FF2A85] text-white"
-                          : "text-purple-200/75 hover:text-white"
-                      }`}
-                    >
-                      Официальный (Создатель — автогалочка)
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setRegAccountType("personal")}
-                      className={`flex-1 rounded-lg py-1.5 transition ${
-                        regAccountType === "personal"
-                          ? "bg-gradient-to-r from-[#9D4EDD] to-[#FF2A85] text-white"
-                          : "text-purple-200/75 hover:text-white"
-                      }`}
-                    >
-                      Личный аккаунт
-                    </button>
+                  <div className="rounded-xl border border-purple-500/20 bg-[#090414]/80 px-3.5 py-2 text-xs text-purple-200/80">
+                    Создаётся личный аккаунт участника Aura Space.
                   </div>
 
                   <div className="grid gap-4 sm:grid-cols-2">
@@ -3106,7 +3181,7 @@ export default function HomePage() {
                         type="text"
                         value={regUsername}
                         onChange={(e) => setRegUsername(e.target.value)}
-                        placeholder="Например, Артём"
+                        placeholder="Твоё имя"
                         maxLength={28}
                         className="w-full rounded-xl border border-purple-500/30 bg-[#090414] px-3.5 py-2.5 text-sm text-white placeholder-purple-300/35 outline-none focus:border-pink-400/70"
                       />
@@ -3118,7 +3193,7 @@ export default function HomePage() {
                         type="text"
                         value={regHandle}
                         onChange={(e) => setRegHandle(e.target.value)}
-                        placeholder="@artem_space"
+                        placeholder="@my_handle"
                         maxLength={20}
                         className="w-full rounded-xl border border-purple-500/30 bg-[#090414] px-3.5 py-2.5 text-sm text-white placeholder-purple-300/35 outline-none focus:border-pink-400/70"
                       />
@@ -3172,37 +3247,36 @@ export default function HomePage() {
                 </form>
               )}
 
-              {accounts.length > 0 && (
+              {accounts.filter((a) => a.accountType !== "official").length > 0 && (
                 <div className="border-t border-purple-500/20 pt-4 space-y-2">
                   <div className="text-[11px] font-bold uppercase tracking-wider text-purple-300/75">
-                    Выбрать сохранённый аккаунт для входа
+                    Выбрать сохранённый личный аккаунт для входа
                   </div>
                   <div className="flex flex-wrap gap-2">
-                    {accounts.map((acc) => (
-                      <button
-                        key={acc.id}
-                        type="button"
-                        onClick={() => {
-                          setAuthMode("login");
-                          setLoginIdentifier(acc.email);
-                          setAuthError(null);
-                        }}
-                        className="flex items-center gap-1.5 rounded-lg border border-purple-500/25 bg-[#090414] px-2.5 py-1 text-xs text-purple-100 hover:border-pink-400/60"
-                      >
-                        <AvatarBadge
-                          name={acc.username}
-                          src={acc.avatar}
-                          size="sm"
-                          presence={acc.presence}
-                        />
-                        {acc.username}{" "}
-                        <VerifiedBadge account={acc} size="sm" />
-                        <span className="text-pink-300">{acc.handle}</span>
-                        <span className="rounded bg-white/10 px-1.5 py-0.5 text-[10px] text-purple-200">
-                          {accountBadgeLabel(acc.accountType)}
-                        </span>
-                      </button>
-                    ))}
+                    {accounts
+                      .filter((a) => a.accountType !== "official")
+                      .map((acc) => (
+                        <button
+                          key={acc.id}
+                          type="button"
+                          onClick={() => {
+                            setAuthMode("login");
+                            setLoginIdentifier(acc.email);
+                            setAuthError(null);
+                          }}
+                          className="flex items-center gap-1.5 rounded-lg border border-purple-500/25 bg-[#090414] px-2.5 py-1 text-xs text-purple-100 hover:border-pink-400/60"
+                        >
+                          <AvatarBadge
+                            name={acc.username}
+                            src={acc.avatar}
+                            size="sm"
+                            presence={acc.presence}
+                          />
+                          {acc.username}{" "}
+                          <VerifiedBadge account={acc} size="sm" />
+                          <span className="text-pink-300">{acc.handle}</span>
+                        </button>
+                      ))}
                   </div>
                 </div>
               )}
@@ -3295,10 +3369,10 @@ export default function HomePage() {
                   </p>
                 )}
 
-                {accounts.length > 0 && (
+                {quickSwitchAccounts.length > 0 && (
                   <div className="border-t border-purple-500/20 pt-2.5 space-y-1.5">
                     <div className="flex items-center justify-between text-[10px] font-bold uppercase tracking-wider text-purple-300/75">
-                      <span>Мои аккаунты ({accounts.length})</span>
+                      <span>Мои аккаунты ({quickSwitchAccounts.length})</span>
                       <button
                         type="button"
                         onClick={() => {
@@ -3311,7 +3385,7 @@ export default function HomePage() {
                       </button>
                     </div>
                     <div className="space-y-1">
-                      {accounts.map((acc) => {
+                      {quickSwitchAccounts.map((acc) => {
                         const isCurrent = acc.id === currentUser.id;
                         return (
                           <button
@@ -4077,37 +4151,6 @@ export default function HomePage() {
                               </div>
                             </div>
 
-                            <div className="flex gap-2 rounded-xl border border-purple-500/25 bg-[#090414] p-1 text-xs font-bold">
-                              <button
-                                type="button"
-                                onClick={() => {
-                                  setProfileAccountType("official");
-                                  setProfileSaved(false);
-                                }}
-                                className={`flex-1 rounded-lg py-1.5 transition ${
-                                  profileAccountType === "official"
-                                    ? "bg-gradient-to-r from-[#9D4EDD] to-[#FF2A85] text-white"
-                                    : "text-purple-200/75 hover:text-white"
-                                }`}
-                              >
-                                Официальный (Создатель — автогалочка)
-                              </button>
-                              <button
-                                type="button"
-                                onClick={() => {
-                                  setProfileAccountType("personal");
-                                  setProfileSaved(false);
-                                }}
-                                className={`flex-1 rounded-lg py-1.5 transition ${
-                                  profileAccountType === "personal"
-                                    ? "bg-gradient-to-r from-[#9D4EDD] to-[#FF2A85] text-white"
-                                    : "text-purple-200/75 hover:text-white"
-                                }`}
-                              >
-                                Личный аккаунт
-                              </button>
-                            </div>
-
                             <div className="grid gap-4 sm:grid-cols-3">
                               <label className="block space-y-1.5 text-xs">
                                 <span className="font-bold text-pink-200">Имя</span>
@@ -4164,6 +4207,22 @@ export default function HomePage() {
                                 maxLength={240}
                                 placeholder="Пара слов о себе, проектах или настроении..."
                                 className="w-full resize-none rounded-xl border border-purple-500/30 bg-[#090414] p-3 text-sm text-white placeholder-purple-300/35 outline-none focus:border-pink-400/70"
+                              />
+                            </label>
+
+                            <label className="block space-y-1.5 text-xs">
+                              <span className="font-bold text-pink-200">
+                                Новый пароль (оставь пустым, если менять не нужно)
+                              </span>
+                              <input
+                                type="password"
+                                value={profileNewPassword}
+                                onChange={(e) => {
+                                  setProfileNewPassword(e.target.value);
+                                  setProfileSaved(false);
+                                }}
+                                placeholder="Минимум 6 символов"
+                                className="w-full rounded-xl border border-purple-500/30 bg-[#090414] px-3 py-2 text-sm text-white placeholder-purple-300/35 outline-none focus:border-pink-400/70"
                               />
                             </label>
 
@@ -4588,7 +4647,7 @@ export default function HomePage() {
                                 </div>
                               )}
 
-                              {/* Карточка репоста (Facebook-стиль) */}
+                              {/* Карточка репоста */}
                               {repostSnapshot && (
                                 <div className="rounded-xl border border-purple-500/30 bg-[#090414]/85 p-3.5 space-y-2">
                                   <div className="flex flex-wrap items-center justify-between gap-2 text-xs">
