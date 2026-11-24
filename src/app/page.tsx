@@ -97,6 +97,187 @@ const BANNER_PRESETS: { id: string; label: string; gradient: string }[] = [
   },
 ];
 
+const DISPOSABLE_EMAIL_DOMAINS = new Set([
+  "10minutemail.com",
+  "temp-mail.org",
+  "tempmail.com",
+  "guerrillamail.com",
+  "guerrillamail.info",
+  "guerrillamail.net",
+  "guerrillamail.org",
+  "mailinator.com",
+  "yopmail.com",
+  "yopmail.fr",
+  "yopmail.net",
+  "trashmail.com",
+  "sharklasers.com",
+  "getnada.com",
+  "dispostable.com",
+  "fakeinbox.com",
+  "throwawaymail.com",
+  "tempail.com",
+  "mohmal.com",
+  "emailondeck.com",
+]);
+
+const TYPO_DOMAIN_SUGGESTIONS: Record<string, string> = {
+  "gmial.com": "gmail.com",
+  "gamil.com": "gmail.com",
+  "gmaill.com": "gmail.com",
+  "gmail.ru": "gmail.com",
+  "gnail.com": "gmail.com",
+  "hotmal.com": "hotmail.com",
+  "hotmai.com": "hotmail.com",
+  "outlok.com": "outlook.com",
+  "outloo.com": "outlook.com",
+  "yaho.com": "yahoo.com",
+  "yahooo.com": "yahoo.com",
+  "mial.ru": "mail.ru",
+  "maul.ru": "mail.ru",
+  "yadnex.ru": "yandex.ru",
+  "yandx.ru": "yandex.ru",
+  "icloud.ru": "icloud.com",
+};
+
+interface EmailValidationResult {
+  valid: boolean;
+  normalized: string;
+  error?: string;
+  suggestion?: string;
+}
+
+function validateEmailAddress(raw: string): EmailValidationResult {
+  const normalized = (typeof raw === "string" ? raw : "").trim().toLowerCase();
+
+  if (!normalized) {
+    return { valid: false, normalized, error: "Введи адрес электронной почты." };
+  }
+
+  if (normalized.length > 254 || /\s/.test(normalized)) {
+    return {
+      valid: false,
+      normalized,
+      error: "Некорректный формат email (проверь пробелы и длину адреса).",
+    };
+  }
+
+  const atParts = normalized.split("@");
+  if (atParts.length !== 2) {
+    return {
+      valid: false,
+      normalized,
+      error: "Email должен содержать ровно один символ @.",
+    };
+  }
+
+  const [localPart, domainPart] = atParts;
+
+  if (
+    !localPart ||
+    localPart.length > 64 ||
+    localPart.startsWith(".") ||
+    localPart.endsWith(".") ||
+    localPart.includes("..") ||
+    !/^[a-z0-9.!#$%&'*+/=?^_`{|}~-]+$/i.test(localPart)
+  ) {
+    return {
+      valid: false,
+      normalized,
+      error: "Некорректное имя пользователя до @.",
+    };
+  }
+
+  if (
+    !domainPart ||
+    domainPart.startsWith(".") ||
+    domainPart.endsWith(".") ||
+    domainPart.startsWith("-") ||
+    domainPart.endsWith("-") ||
+    domainPart.includes("..") ||
+    !/^[a-z0-9-]+(\.[a-z0-9-]+)+$/i.test(domainPart)
+  ) {
+    return {
+      valid: false,
+      normalized,
+      error: "Некорректный домен почты (например, name@gmail.com).",
+    };
+  }
+
+  const tld = domainPart.split(".").pop() || "";
+  if (tld.length < 2 || /^\d+$/.test(tld)) {
+    return {
+      valid: false,
+      normalized,
+      error: "Укажи реальную доменную зону почты (например, .com, .ru, .org).",
+    };
+  }
+
+  if (
+    domainPart === "example.com" ||
+    domainPart === "example.org" ||
+    domainPart === "example.net" ||
+    domainPart === "localhost" ||
+    domainPart.endsWith(".test") ||
+    domainPart.endsWith(".invalid") ||
+    domainPart.endsWith(".local")
+  ) {
+    return {
+      valid: false,
+      normalized,
+      error: "Тестовые и вымышленные домены не принимаются. Укажи реальную почту.",
+    };
+  }
+
+  if (DISPOSABLE_EMAIL_DOMAINS.has(domainPart)) {
+    return {
+      valid: false,
+      normalized,
+      error: "Одноразовые и временные почтовые сервисы запрещены.",
+    };
+  }
+
+  const suggestedDomain = TYPO_DOMAIN_SUGGESTIONS[domainPart];
+  if (suggestedDomain) {
+    const suggestion = `${localPart}@${suggestedDomain}`;
+    return {
+      valid: false,
+      normalized,
+      suggestion,
+      error: `Похоже на опечатку в домене. Возможно, ты имел в виду ${suggestion}?`,
+    };
+  }
+
+  return { valid: true, normalized };
+}
+
+async function domainHasMxRecords(domain: string): Promise<boolean | null> {
+  if (typeof window === "undefined" || typeof fetch !== "function") {
+    return null;
+  }
+  const controller = new AbortController();
+  const timeoutId = window.setTimeout(() => controller.abort(), 2500);
+  try {
+    const res = await fetch(
+      `https://dns.google/resolve?name=${encodeURIComponent(domain)}&type=MX`,
+      { signal: controller.signal }
+    );
+    if (!res.ok) return null;
+    const data = (await res.json()) as {
+      Status?: number;
+      Answer?: Array<{ type?: number }>;
+    };
+    if (data.Status === 3) return false;
+    if (Array.isArray(data.Answer) && data.Answer.some((a) => a.type === 15)) {
+      return true;
+    }
+    return data.Status === 0 ? false : null;
+  } catch {
+    return null;
+  } finally {
+    window.clearTimeout(timeoutId);
+  }
+}
+
 interface CommentItem {
   id: string;
   author: string;
@@ -688,6 +869,7 @@ export default function HomePage() {
   const [loginIdentifier, setLoginIdentifier] = useState("");
   const [loginPassword, setLoginPassword] = useState("");
   const [authError, setAuthError] = useState<string | null>(null);
+  const [authSuggestion, setAuthSuggestion] = useState<string | null>(null);
   const [authSubmitting, setAuthSubmitting] = useState(false);
 
   const [showAddAccountModal, setShowAddAccountModal] = useState(false);
@@ -697,6 +879,7 @@ export default function HomePage() {
   const [addAccPassword, setAddAccPassword] = useState("");
   const [addAccPasswordConfirm, setAddAccPasswordConfirm] = useState("");
   const [addAccError, setAddAccError] = useState<string | null>(null);
+  const [addAccSuggestion, setAddAccSuggestion] = useState<string | null>(null);
   const [addAccSubmitting, setAddAccSubmitting] = useState(false);
 
   const [rooms, setRooms] = useState<RoomItem[]>(DEFAULT_ROOMS);
@@ -1993,10 +2176,11 @@ export default function HomePage() {
   async function handleCreateExtraAccount(e: React.FormEvent) {
     e.preventDefault();
     setAddAccError(null);
+    setAddAccSuggestion(null);
 
     const cleanName = addAccUsername.trim();
     const cleanHandle = normalizeHandle(addAccHandle || cleanName);
-    const cleanEmail = addAccEmail.trim().toLowerCase();
+    const emailCheck = validateEmailAddress(addAccEmail);
 
     if (cleanName.length < 2) {
       setAddAccError("Имя должно быть не короче 2 символов.");
@@ -2014,8 +2198,11 @@ export default function HomePage() {
       );
       return;
     }
-    if (!cleanEmail || !cleanEmail.includes("@")) {
-      setAddAccError("Введи корректный email.");
+    if (!emailCheck.valid) {
+      setAddAccError(emailCheck.error || "Введи корректный email.");
+      if (emailCheck.suggestion) {
+        setAddAccSuggestion(emailCheck.suggestion);
+      }
       return;
     }
     if (addAccPassword.length < 6) {
@@ -2026,6 +2213,9 @@ export default function HomePage() {
       setAddAccError("Пароли не совпадают.");
       return;
     }
+
+    const cleanEmail = emailCheck.normalized;
+    const domainPart = cleanEmail.split("@")[1];
 
     const handleTaken = accounts.some(
       (a) => safeLower(a?.handle) === safeLower(cleanHandle)
@@ -2045,6 +2235,14 @@ export default function HomePage() {
 
     setAddAccSubmitting(true);
     try {
+      const mxExists = await domainHasMxRecords(domainPart);
+      if (mxExists === false) {
+        setAddAccError(
+          `Домен ${domainPart} не существует или не принимает почту.`
+        );
+        return;
+      }
+
       const salt = generateSalt();
       const passwordHash = await hashPassword(addAccPassword, salt);
       const createdTime = nowTimeLabel();
@@ -2092,10 +2290,11 @@ export default function HomePage() {
   async function handleRegister(e: React.FormEvent) {
     e.preventDefault();
     setAuthError(null);
+    setAuthSuggestion(null);
 
     const cleanName = regUsername.trim();
     const cleanHandle = normalizeHandle(regHandle || cleanName);
-    const cleanEmail = regEmail.trim().toLowerCase();
+    const emailCheck = validateEmailAddress(regEmail);
 
     if (cleanName.length < 2) {
       setAuthError("Имя должно быть не короче 2 символов.");
@@ -2113,8 +2312,11 @@ export default function HomePage() {
       );
       return;
     }
-    if (!cleanEmail || !cleanEmail.includes("@")) {
-      setAuthError("Введи корректный email.");
+    if (!emailCheck.valid) {
+      setAuthError(emailCheck.error || "Введи корректный email.");
+      if (emailCheck.suggestion) {
+        setAuthSuggestion(emailCheck.suggestion);
+      }
       return;
     }
     if (regPassword.length < 6) {
@@ -2125,6 +2327,9 @@ export default function HomePage() {
       setAuthError("Пароли не совпадают.");
       return;
     }
+
+    const cleanEmail = emailCheck.normalized;
+    const domainPart = cleanEmail.split("@")[1];
 
     const handleTaken = accounts.some(
       (a) => safeLower(a?.handle) === safeLower(cleanHandle)
@@ -2144,6 +2349,14 @@ export default function HomePage() {
 
     setAuthSubmitting(true);
     try {
+      const mxExists = await domainHasMxRecords(domainPart);
+      if (mxExists === false) {
+        setAuthError(
+          `Домен ${domainPart} не существует или не принимает почту.`
+        );
+        return;
+      }
+
       const salt = generateSalt();
       const passwordHash = await hashPassword(regPassword, salt);
       const createdTime = nowTimeLabel();
@@ -2191,6 +2404,7 @@ export default function HomePage() {
   async function handleLogin(e: React.FormEvent) {
     e.preventDefault();
     setAuthError(null);
+    setAuthSuggestion(null);
 
     const rawId = loginIdentifier.trim().toLowerCase();
     const normalizedIdHandle = normalizeHandle(rawId);
@@ -2259,6 +2473,7 @@ export default function HomePage() {
     setAuthMode("login");
     setInspectedHandle(null);
     setAuthError(null);
+    setAuthSuggestion(null);
   }
 
   function handleCreatePost(e: React.FormEvent) {
@@ -2642,6 +2857,7 @@ export default function HomePage() {
                 type="button"
                 onClick={() => {
                   setAddAccError(null);
+                  setAddAccSuggestion(null);
                   setShowAddAccountModal((v) => !v);
                 }}
                 className="inline-flex items-center gap-1 rounded-xl border border-pink-400/40 bg-[#24103B] px-3 py-1.5 text-xs font-bold text-pink-200 hover:bg-[#331552]"
@@ -2688,6 +2904,7 @@ export default function HomePage() {
                 onClick={() => {
                   setAuthMode("login");
                   setAuthError(null);
+                  setAuthSuggestion(null);
                 }}
                 className={`rounded-xl px-3.5 py-1.5 font-bold transition ${
                   authMode === "login"
@@ -2702,6 +2919,7 @@ export default function HomePage() {
                 onClick={() => {
                   setAuthMode("register");
                   setAuthError(null);
+                  setAuthSuggestion(null);
                 }}
                 className={`rounded-xl px-3.5 py-1.5 font-bold transition ${
                   authMode === "register"
@@ -2958,8 +3176,21 @@ export default function HomePage() {
             </div>
 
             {addAccError && (
-              <div className="rounded-xl border border-rose-500/40 bg-rose-950/50 px-3.5 py-2 text-xs font-semibold text-rose-200">
-                {addAccError}
+              <div className="rounded-xl border border-rose-500/40 bg-rose-950/50 px-3.5 py-2.5 text-xs font-semibold text-rose-200 space-y-2">
+                <div>{addAccError}</div>
+                {addAccSuggestion && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setAddAccEmail(addAccSuggestion);
+                      setAddAccError(null);
+                      setAddAccSuggestion(null);
+                    }}
+                    className="rounded-lg bg-white/10 px-2.5 py-1 text-[11px] font-bold text-pink-200 hover:bg-white/20"
+                  >
+                    Использовать {addAccSuggestion}
+                  </button>
+                )}
               </div>
             )}
 
@@ -2994,7 +3225,10 @@ export default function HomePage() {
                   <input
                     type="email"
                     value={addAccEmail}
-                    onChange={(e) => setAddAccEmail(e.target.value)}
+                    onChange={(e) => {
+                      setAddAccEmail(e.target.value);
+                      if (addAccSuggestion) setAddAccSuggestion(null);
+                    }}
                     placeholder="second@example.com"
                     className="w-full rounded-xl border border-purple-500/30 bg-[#090414] px-3 py-2 text-sm text-white placeholder-purple-300/35 outline-none focus:border-pink-400/70"
                   />
@@ -3038,7 +3272,7 @@ export default function HomePage() {
                   disabled={addAccSubmitting}
                   className="rounded-xl bg-gradient-to-r from-[#9D4EDD] to-[#FF2A85] px-4 py-2 text-xs font-extrabold text-white shadow-md hover:brightness-110 disabled:opacity-50"
                 >
-                  {addAccSubmitting ? "Создаём..." : "Создать личный аккаунт"}
+                  {addAccSubmitting ? "Проверяем и создаём..." : "Создать личный аккаунт"}
                 </button>
               </div>
             </form>
@@ -3059,6 +3293,7 @@ export default function HomePage() {
                   onClick={() => {
                     setAuthMode("login");
                     setAuthError(null);
+                    setAuthSuggestion(null);
                   }}
                   className={`flex flex-1 items-center justify-center gap-1.5 rounded-lg py-2 transition ${
                     authMode === "login"
@@ -3074,6 +3309,7 @@ export default function HomePage() {
                   onClick={() => {
                     setAuthMode("register");
                     setAuthError(null);
+                    setAuthSuggestion(null);
                   }}
                   className={`flex flex-1 items-center justify-center gap-1.5 rounded-lg py-2 transition ${
                     authMode === "register"
@@ -3087,8 +3323,21 @@ export default function HomePage() {
               </div>
 
               {authError && (
-                <div className="rounded-xl border border-rose-500/40 bg-rose-950/50 px-3.5 py-2.5 text-xs font-semibold text-rose-200">
-                  {authError}
+                <div className="rounded-xl border border-rose-500/40 bg-rose-950/50 px-3.5 py-2.5 text-xs font-semibold text-rose-200 space-y-2">
+                  <div>{authError}</div>
+                  {authSuggestion && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setRegEmail(authSuggestion);
+                        setAuthError(null);
+                        setAuthSuggestion(null);
+                      }}
+                      className="rounded-lg bg-white/10 px-2.5 py-1 text-[11px] font-bold text-pink-200 hover:bg-white/20"
+                    >
+                      Использовать {authSuggestion}
+                    </button>
+                  )}
                 </div>
               )}
 
@@ -3163,7 +3412,10 @@ export default function HomePage() {
                     <input
                       type="email"
                       value={regEmail}
-                      onChange={(e) => setRegEmail(e.target.value)}
+                      onChange={(e) => {
+                        setRegEmail(e.target.value);
+                        if (authSuggestion) setAuthSuggestion(null);
+                      }}
                       placeholder="name@example.com"
                       className="w-full rounded-xl border border-purple-500/30 bg-[#090414] px-3.5 py-2.5 text-sm text-white placeholder-purple-300/35 outline-none focus:border-pink-400/70"
                     />
@@ -3199,7 +3451,7 @@ export default function HomePage() {
                     className="w-full rounded-xl bg-gradient-to-r from-[#9D4EDD] to-[#FF2A85] py-2.5 text-sm font-extrabold text-white shadow-lg transition hover:brightness-110 disabled:opacity-50"
                   >
                     {authSubmitting
-                      ? "Создаём аккаунт..."
+                      ? "Проверяем почту и создаём..."
                       : "Зарегистрироваться в Aura Space"}
                   </button>
                 </form>
@@ -3221,6 +3473,7 @@ export default function HomePage() {
                             setAuthMode("login");
                             setLoginIdentifier(acc.email);
                             setAuthError(null);
+                            setAuthSuggestion(null);
                           }}
                           className="flex items-center gap-1.5 rounded-lg border border-purple-500/25 bg-[#090414] px-2.5 py-1 text-xs text-purple-100 hover:border-pink-400/60"
                         >
@@ -3335,6 +3588,7 @@ export default function HomePage() {
                         type="button"
                         onClick={() => {
                           setAddAccError(null);
+                          setAddAccSuggestion(null);
                           setShowAddAccountModal(true);
                         }}
                         className="text-pink-300 hover:underline"
