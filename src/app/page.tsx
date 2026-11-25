@@ -1006,8 +1006,8 @@ export default function HomePage() {
   const syncChannelRef = useRef<BroadcastChannel | null>(null);
   const remoteSyncLockRef = useRef(false);
   const localStreamRef = useRef<MediaStream | null>(null);
-  const peerConnectionsRef = useRef>(new Map());
-  const remoteAudioElsRef = useRef>(new Map());
+  const peerConnectionsRef = useRef<Map<string, RTCPeerConnection>>(new Map());
+  const remoteAudioElsRef = useRef<Map<string, HTMLAudioElement>>(new Map());
   const audioContextRef = useRef<AudioContext | null>(null);
   const analyserRef = useRef<AnalyserNode | null>(null);
   const meterRafRef = useRef<number | null>(null);
@@ -3419,12 +3419,7 @@ export default function HomePage() {
                         {hasEgg && (
                           <PostCornerPeelHandle
                             pullValue={pullValue}
-                            onPullChange={(nextVal: number) =>
-                              setPeelPulls((prev) => ({
-                                ...prev,
-                                [post.id]: typeof nextVal === "number" ? nextVal : 0,
-                              }))
-                            }
+                            onPullChange={(nextVal: React.SetStateAction<number>) => setPeelPulls((prev) => { const currentVal = prev[post.id] || 0; const resolved = typeof nextVal === "function" ? nextVal(currentVal) : nextVal; return { ...prev, [post.id]: typeof resolved === "number" ? resolved : 0 }; })}
                           />
                         )}
 
