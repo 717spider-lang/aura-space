@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
@@ -49,7 +49,7 @@ import {
 } from "@/components/SocialNetworkEasterEgg";
 import { CloudPostRecord, getSupabaseClient } from "@/lib/supabasePosts";
 
-const REACTION_EMOJIS = ["🔥", "💀", "👾", "❤️"] as const;
+const REACTION_EMOJIS = ["рџ”Ґ", "рџ’Ђ", "рџ‘ѕ", "вќ¤пёЏ"] as const;
 type ReactionEmoji = (typeof REACTION_EMOJIS)[number];
 type ReactionMap = Partial<Record<ReactionEmoji, string[]>>;
 
@@ -60,17 +60,17 @@ const PRESENCE_META: Record<
   { label: string; dotClass: string; badgeClass: string }
 > = {
   online: {
-    label: "Онлайн",
+    label: "РћРЅР»Р°Р№РЅ",
     dotClass: "bg-emerald-400 shadow-[0_0_8px_rgba(52,211,153,0.85)]",
     badgeClass: "border-emerald-400/35 bg-emerald-950/50 text-emerald-200",
   },
   building: {
-    label: "В сборке",
+    label: "Р’ СЃР±РѕСЂРєРµ",
     dotClass: "bg-amber-400 shadow-[0_0_8px_rgba(251,191,36,0.85)]",
     badgeClass: "border-amber-400/35 bg-amber-950/50 text-amber-200",
   },
   orbit: {
-    label: "На орбите",
+    label: "РќР° РѕСЂР±РёС‚Рµ",
     dotClass: "bg-fuchsia-400 shadow-[0_0_8px_rgba(232,121,249,0.85)]",
     badgeClass: "border-fuchsia-400/35 bg-fuchsia-950/50 text-pink-200",
   },
@@ -79,25 +79,25 @@ const PRESENCE_META: Record<
 const BANNER_PRESETS: { id: string; label: string; gradient: string }[] = [
   {
     id: "nebula",
-    label: "Неоновая туманность",
+    label: "РќРµРѕРЅРѕРІР°СЏ С‚СѓРјР°РЅРЅРѕСЃС‚СЊ",
     gradient:
       "linear-gradient(125deg, #240B36 0%, #7B2CBF 48%, #FF2A85 100%)",
   },
   {
     id: "eclipse",
-    label: "Затмение Сатурна",
+    label: "Р—Р°С‚РјРµРЅРёРµ РЎР°С‚СѓСЂРЅР°",
     gradient:
       "linear-gradient(125deg, #090414 0%, #3C096C 52%, #9D4EDD 100%)",
   },
   {
     id: "cyber",
-    label: "Ночной эфир",
+    label: "РќРѕС‡РЅРѕР№ СЌС„РёСЂ",
     gradient:
       "linear-gradient(125deg, #0D1B2A 0%, #1B263B 45%, #B5179E 100%)",
   },
   {
     id: "supernova",
-    label: "Сверхновая",
+    label: "РЎРІРµСЂС…РЅРѕРІР°СЏ",
     gradient:
       "linear-gradient(125deg, #3A0CA3 0%, #F72585 55%, #FF9E00 100%)",
   },
@@ -156,14 +156,14 @@ function validateEmailAddress(raw: string): EmailValidationResult {
   const normalized = (typeof raw === "string" ? raw : "").trim().toLowerCase();
 
   if (!normalized) {
-    return { valid: false, normalized, error: "Введи адрес электронной почты." };
+    return { valid: false, normalized, error: "Р’РІРµРґРё Р°РґСЂРµСЃ СЌР»РµРєС‚СЂРѕРЅРЅРѕР№ РїРѕС‡С‚С‹." };
   }
 
   if (normalized.length > 254 || /\s/.test(normalized)) {
     return {
       valid: false,
       normalized,
-      error: "Некорректный формат email (проверь пробелы и длину адреса).",
+      error: "РќРµРєРѕСЂСЂРµРєС‚РЅС‹Р№ С„РѕСЂРјР°С‚ email (РїСЂРѕРІРµСЂСЊ РїСЂРѕР±РµР»С‹ Рё РґР»РёРЅСѓ Р°РґСЂРµСЃР°).",
     };
   }
 
@@ -172,7 +172,7 @@ function validateEmailAddress(raw: string): EmailValidationResult {
     return {
       valid: false,
       normalized,
-      error: "Email должен содержать ровно один символ @.",
+      error: "Email РґРѕР»Р¶РµРЅ СЃРѕРґРµСЂР¶Р°С‚СЊ СЂРѕРІРЅРѕ РѕРґРёРЅ СЃРёРјРІРѕР» @.",
     };
   }
 
@@ -189,7 +189,7 @@ function validateEmailAddress(raw: string): EmailValidationResult {
     return {
       valid: false,
       normalized,
-      error: "Некорректное имя пользователя до @.",
+      error: "РќРµРєРѕСЂСЂРµРєС‚РЅРѕРµ РёРјСЏ РїРѕР»СЊР·РѕРІР°С‚РµР»СЏ РґРѕ @.",
     };
   }
 
@@ -205,7 +205,7 @@ function validateEmailAddress(raw: string): EmailValidationResult {
     return {
       valid: false,
       normalized,
-      error: "Некорректный домен почты (например, name@gmail.com).",
+      error: "РќРµРєРѕСЂСЂРµРєС‚РЅС‹Р№ РґРѕРјРµРЅ РїРѕС‡С‚С‹ (РЅР°РїСЂРёРјРµСЂ, name@gmail.com).",
     };
   }
 
@@ -214,7 +214,7 @@ function validateEmailAddress(raw: string): EmailValidationResult {
     return {
       valid: false,
       normalized,
-      error: "Укажи реальную доменную зону почты (например, .com, .ru, .org).",
+      error: "РЈРєР°Р¶Рё СЂРµР°Р»СЊРЅСѓСЋ РґРѕРјРµРЅРЅСѓСЋ Р·РѕРЅСѓ РїРѕС‡С‚С‹ (РЅР°РїСЂРёРјРµСЂ, .com, .ru, .org).",
     };
   }
 
@@ -230,7 +230,7 @@ function validateEmailAddress(raw: string): EmailValidationResult {
     return {
       valid: false,
       normalized,
-      error: "Тестовые и вымышленные домены не принимаются. Укажи реальную почту.",
+      error: "РўРµСЃС‚РѕРІС‹Рµ Рё РІС‹РјС‹С€Р»РµРЅРЅС‹Рµ РґРѕРјРµРЅС‹ РЅРµ РїСЂРёРЅРёРјР°СЋС‚СЃСЏ. РЈРєР°Р¶Рё СЂРµР°Р»СЊРЅСѓСЋ РїРѕС‡С‚Сѓ.",
     };
   }
 
@@ -238,7 +238,7 @@ function validateEmailAddress(raw: string): EmailValidationResult {
     return {
       valid: false,
       normalized,
-      error: "Одноразовые и временные почтовые сервисы запрещены.",
+      error: "РћРґРЅРѕСЂР°Р·РѕРІС‹Рµ Рё РІСЂРµРјРµРЅРЅС‹Рµ РїРѕС‡С‚РѕРІС‹Рµ СЃРµСЂРІРёСЃС‹ Р·Р°РїСЂРµС‰РµРЅС‹.",
     };
   }
 
@@ -249,7 +249,7 @@ function validateEmailAddress(raw: string): EmailValidationResult {
       valid: false,
       normalized,
       suggestion,
-      error: `Похоже на опечатку в домене. Возможно, ты имел в виду ${suggestion}?`,
+      error: `РџРѕС…РѕР¶Рµ РЅР° РѕРїРµС‡Р°С‚РєСѓ РІ РґРѕРјРµРЅРµ. Р’РѕР·РјРѕР¶РЅРѕ, С‚С‹ РёРјРµР» РІ РІРёРґСѓ ${suggestion}?`,
     };
   }
 
@@ -407,8 +407,8 @@ const CREATOR_ACCOUNTS_SEED: Array<{
     username: "system_404",
     handle: "@system_404",
     email: "system_404@auraspace.local",
-    bio: "Создатель и разработчик Aura Space.",
-    mood: "В сборке Aura Space",
+    bio: "РЎРѕР·РґР°С‚РµР»СЊ Рё СЂР°Р·СЂР°Р±РѕС‚С‡РёРє Aura Space.",
+    mood: "Р’ СЃР±РѕСЂРєРµ Aura Space",
     presence: "online",
     banner: BANNER_PRESETS[0].gradient,
     friends: [],
@@ -423,18 +423,18 @@ const RTC_CONFIG: RTCConfiguration = {
 const DEFAULT_ROOMS: RoomItem[] = [
   {
     id: "general",
-    name: "орбита",
-    topic: "Главный поток Aura Space и всё, что происходит сейчас",
+    name: "РѕСЂР±РёС‚Р°",
+    topic: "Р“Р»Р°РІРЅС‹Р№ РїРѕС‚РѕРє Aura Space Рё РІСЃС‘, С‡С‚Рѕ РїСЂРѕРёСЃС…РѕРґРёС‚ СЃРµР№С‡Р°СЃ",
   },
   {
     id: "dev",
-    name: "сборка",
-    topic: "Код, идеи, тесты и запуск новых фич без лишнего шума",
+    name: "СЃР±РѕСЂРєР°",
+    topic: "РљРѕРґ, РёРґРµРё, С‚РµСЃС‚С‹ Рё Р·Р°РїСѓСЃРє РЅРѕРІС‹С… С„РёС‡ Р±РµР· Р»РёС€РЅРµРіРѕ С€СѓРјР°",
   },
   {
     id: "chill",
-    name: "ночной-эфир",
-    topic: "Музыка, вайб, ссылки и свободные разговоры",
+    name: "РЅРѕС‡РЅРѕР№-СЌС„РёСЂ",
+    topic: "РњСѓР·С‹РєР°, РІР°Р№Р±, СЃСЃС‹Р»РєРё Рё СЃРІРѕР±РѕРґРЅС‹Рµ СЂР°Р·РіРѕРІРѕСЂС‹",
   },
 ];
 
@@ -445,15 +445,15 @@ const INITIAL_POSTS: PostItem[] = [
     author: "system_404",
     handle: "@system_404",
     avatar: null,
-    text: "Орбита запущена, каналы, реакции, закреп и обложки профиля подключены. Погнали тестировать!",
+    text: "РћСЂР±РёС‚Р° Р·Р°РїСѓС‰РµРЅР°, РєР°РЅР°Р»С‹, СЂРµР°РєС†РёРё, Р·Р°РєСЂРµРї Рё РѕР±Р»РѕР¶РєРё РїСЂРѕС„РёР»СЏ РїРѕРґРєР»СЋС‡РµРЅС‹. РџРѕРіРЅР°Р»Рё С‚РµСЃС‚РёСЂРѕРІР°С‚СЊ!",
     image: null,
-    createdAt: "только что",
+    createdAt: "С‚РѕР»СЊРєРѕ С‡С‚Рѕ",
     pinned: true,
     likes: 3,
     likedByMe: false,
     reactions: {
-      "🔥": ["@system_404"],
-      "👾": ["@system_404"],
+      "рџ”Ґ": ["@system_404"],
+      "рџ‘ѕ": ["@system_404"],
     },
     comments: [],
   },
@@ -463,13 +463,13 @@ const INITIAL_POSTS: PostItem[] = [
     author: "system_404",
     handle: "@system_404",
     avatar: null,
-    text: "Аватарка, статус активности и баннер подтягиваются к профилю автоматически.",
+    text: "РђРІР°С‚Р°СЂРєР°, СЃС‚Р°С‚СѓСЃ Р°РєС‚РёРІРЅРѕСЃС‚Рё Рё Р±Р°РЅРЅРµСЂ РїРѕРґС‚СЏРіРёРІР°СЋС‚СЃСЏ Рє РїСЂРѕС„РёР»СЋ Р°РІС‚РѕРјР°С‚РёС‡РµСЃРєРё.",
     image: null,
-    createdAt: "5 мин назад",
+    createdAt: "5 РјРёРЅ РЅР°Р·Р°Рґ",
     likes: 4,
     likedByMe: true,
     reactions: {
-      "❤️": ["@system_404"],
+      "вќ¤пёЏ": ["@system_404"],
     },
     comments: [],
   },
@@ -479,13 +479,13 @@ const INITIAL_POSTS: PostItem[] = [
     author: "system_404",
     handle: "@system_404",
     avatar: null,
-    text: "Тёмный неон и пустота вокруг — самое то для ночных сессий.",
+    text: "РўС‘РјРЅС‹Р№ РЅРµРѕРЅ Рё РїСѓСЃС‚РѕС‚Р° РІРѕРєСЂСѓРі вЂ” СЃР°РјРѕРµ С‚Рѕ РґР»СЏ РЅРѕС‡РЅС‹С… СЃРµСЃСЃРёР№.",
     image: null,
-    createdAt: "12 мин назад",
+    createdAt: "12 РјРёРЅ РЅР°Р·Р°Рґ",
     likes: 2,
     likedByMe: false,
     reactions: {
-      "💀": ["@system_404"],
+      "рџ’Ђ": ["@system_404"],
     },
     comments: [],
   },
@@ -498,11 +498,11 @@ const INITIAL_MESSAGES: ChatMessage[] = [
     author: "system_404",
     handle: "@system_404",
     avatar: null,
-    text: "Всем привет в Aura Space. Закрепил правила эфира вверху канала.",
+    text: "Р’СЃРµРј РїСЂРёРІРµС‚ РІ Aura Space. Р—Р°РєСЂРµРїРёР» РїСЂР°РІРёР»Р° СЌС„РёСЂР° РІРІРµСЂС…Сѓ РєР°РЅР°Р»Р°.",
     createdAt: "14:02",
     pinned: true,
     reactions: {
-      "🔥": ["@system_404"],
+      "рџ”Ґ": ["@system_404"],
     },
   },
 ];
@@ -538,7 +538,7 @@ function normalizeChannelSlug(raw: unknown): string {
     .replace(/^#+/, "")
     .toLowerCase()
     .replace(/\s+/g, "-")
-    .replace(/[^a-zа-яё0-9_-]/gi, "")
+    .replace(/[^a-zР°-СЏС‘0-9_-]/gi, "")
     .slice(0, 24);
 }
 
@@ -561,11 +561,11 @@ function hasVerifiedBadge(
 function verifiedBadgeTitle(
   account?: Pick<UserAccount, "accountType" | "subscribers"> | null
 ): string {
-  if (!account) return "Подтверждённый аккаунт";
+  if (!account) return "РџРѕРґС‚РІРµСЂР¶РґС‘РЅРЅС‹Р№ Р°РєРєР°СѓРЅС‚";
   if (account.accountType === "official") {
-    return "Официальный аккаунт создателя";
+    return "РћС„РёС†РёР°Р»СЊРЅС‹Р№ Р°РєРєР°СѓРЅС‚ СЃРѕР·РґР°С‚РµР»СЏ";
   }
-  return "100 000+ подписчиков";
+  return "100 000+ РїРѕРґРїРёСЃС‡РёРєРѕРІ";
 }
 
 function formatSubscribers(count?: number): string {
@@ -627,12 +627,12 @@ function fromCloudPostRow(row: CloudPostRecord): PostItem {
   return {
     id: row.id,
     roomId: row.room_id || "general",
-    author: row.author || "Участник",
+    author: row.author || "РЈС‡Р°СЃС‚РЅРёРє",
     handle: row.handle || "@user",
     avatar: row.avatar ?? null,
     text: row.text ?? "",
     image: row.image ?? null,
-    createdAt: row.created_at || "только что",
+    createdAt: row.created_at || "С‚РѕР»СЊРєРѕ С‡С‚Рѕ",
     editedAt: row.edited_at ?? null,
     pinned: Boolean(row.pinned),
     likes: typeof row.likes === "number" ? row.likes : 0,
@@ -683,7 +683,7 @@ function RichTextWithMentions({
               type="button"
               onClick={() => onSelectHandle(lower)}
               title={
-                isKnown ? `Открыть профиль ${lower}` : `Участник ${lower}`
+                isKnown ? `РћС‚РєСЂС‹С‚СЊ РїСЂРѕС„РёР»СЊ ${lower}` : `РЈС‡Р°СЃС‚РЅРёРє ${lower}`
               }
               className={`mx-0.5 inline-flex items-center rounded-md px-1.5 py-0.5 font-bold transition ${
                 isMe
@@ -783,7 +783,7 @@ function generateSalt(): string {
 }
 
 function accountBadgeLabel(kind?: AccountKind): string {
-  return kind === "official" ? "Создатель" : "Личный";
+  return kind === "official" ? "РЎРѕР·РґР°С‚РµР»СЊ" : "Р›РёС‡РЅС‹Р№";
 }
 
 function AvatarBadge({
@@ -884,7 +884,7 @@ function ReactionBar({
             title={
               users.length > 0
                 ? `${emoji}: ${users.join(", ")}`
-                : `Поставить ${emoji}`
+                : `РџРѕСЃС‚Р°РІРёС‚СЊ ${emoji}`
             }
             className={`inline-flex items-center gap-1 rounded-lg border px-2 py-1 text-xs font-bold transition ${
               reacted
@@ -1054,14 +1054,14 @@ export default function HomePage() {
           bio: seed.bio,
           mood: seed.mood,
           presence: seed.presence,
-          lastActive: "в сети",
+          lastActive: "РІ СЃРµС‚Рё",
           avatar: null,
           banner: seed.banner,
           friends: [...seed.friends],
           passwordHash,
           salt,
           saturnState: SATURN_DEFAULT,
-          createdAt: "основатель",
+          createdAt: "РѕСЃРЅРѕРІР°С‚РµР»СЊ",
         });
       }
 
@@ -1100,7 +1100,7 @@ export default function HomePage() {
               MILESTONE_SUBSCRIBERS
             ),
             presence: existing.presence || creator.presence,
-            lastActive: existing.lastActive || "в сети",
+            lastActive: existing.lastActive || "РІ СЃРµС‚Рё",
             banner: existing.banner || creator.banner,
           });
         } else {
@@ -1119,7 +1119,7 @@ export default function HomePage() {
           accountType: acc.accountType === "official" ? "official" : "personal",
           subscribers: normalizedSubs,
           presence: acc.presence || "online",
-          lastActive: acc.lastActive || "в сети",
+          lastActive: acc.lastActive || "РІ СЃРµС‚Рё",
           banner: acc.banner || BANNER_PRESETS[0].gradient,
         });
       }
@@ -1498,7 +1498,7 @@ export default function HomePage() {
             peerId: peerIdRef.current,
             targetPeerId,
             roomId: activeRoomIdRef.current,
-            username: currentUser?.username || "Участник",
+            username: currentUser?.username || "РЈС‡Р°СЃС‚РЅРёРє",
             handle: currentUser?.handle || "@user",
             candidate: event.candidate.toJSON(),
           };
@@ -1549,7 +1549,7 @@ export default function HomePage() {
           ...prev,
           {
             peerId: targetPeerId,
-            username: targetUsername || "Участник",
+            username: targetUsername || "РЈС‡Р°СЃС‚РЅРёРє",
             handle: targetHandle || "@user",
           },
         ];
@@ -1587,7 +1587,7 @@ export default function HomePage() {
             peerId: peerIdRef.current,
             targetPeerId: msg.peerId,
             roomId: activeRoomIdRef.current,
-            username: currentUser?.username || "Участник",
+            username: currentUser?.username || "РЈС‡Р°СЃС‚РЅРёРє",
             handle: currentUser?.handle || "@user",
             sdp: pc.localDescription || offer,
           };
@@ -1606,7 +1606,7 @@ export default function HomePage() {
             peerId: peerIdRef.current,
             targetPeerId: msg.peerId,
             roomId: activeRoomIdRef.current,
-            username: currentUser?.username || "Участник",
+            username: currentUser?.username || "РЈС‡Р°СЃС‚РЅРёРє",
             handle: currentUser?.handle || "@user",
             sdp: pc.localDescription || answer,
           };
@@ -1707,7 +1707,7 @@ export default function HomePage() {
 
     if (inCall) {
       cleanupVoice(true);
-      setCallStatus("Ты вышел из голосового канала.");
+      setCallStatus("РўС‹ РІС‹С€РµР» РёР· РіРѕР»РѕСЃРѕРІРѕРіРѕ РєР°РЅР°Р»Р°.");
       return;
     }
 
@@ -1716,7 +1716,7 @@ export default function HomePage() {
       !navigator.mediaDevices ||
       typeof navigator.mediaDevices.getUserMedia !== "function"
     ) {
-      setCallStatus("Браузер не поддерживает доступ к микрофону.");
+      setCallStatus("Р‘СЂР°СѓР·РµСЂ РЅРµ РїРѕРґРґРµСЂР¶РёРІР°РµС‚ РґРѕСЃС‚СѓРї Рє РјРёРєСЂРѕС„РѕРЅСѓ.");
       return;
     }
 
@@ -1750,12 +1750,12 @@ export default function HomePage() {
       }
 
       setCallStatus(
-        `Подключён к голосу в #${activeRoom.name} (WebRTC активен).`
+        `РџРѕРґРєР»СЋС‡С‘РЅ Рє РіРѕР»РѕСЃСѓ РІ #${activeRoom.name} (WebRTC Р°РєС‚РёРІРµРЅ).`
       );
     } catch {
       cleanupVoice(false);
       setCallStatus(
-        "Доступ к микрофону отклонён или недоступен. Разреши микрофон в браузере."
+        "Р”РѕСЃС‚СѓРї Рє РјРёРєСЂРѕС„РѕРЅСѓ РѕС‚РєР»РѕРЅС‘РЅ РёР»Рё РЅРµРґРѕСЃС‚СѓРїРµРЅ. Р Р°Р·СЂРµС€Рё РјРёРєСЂРѕС„РѕРЅ РІ Р±СЂР°СѓР·РµСЂРµ."
       );
     }
   };
@@ -1764,7 +1764,7 @@ export default function HomePage() {
     if (roomId === activeRoomId) return;
     if (inCallRef.current) {
       cleanupVoice(true);
-      setCallStatus("Отключён от голоса при смене канала.");
+      setCallStatus("РћС‚РєР»СЋС‡С‘РЅ РѕС‚ РіРѕР»РѕСЃР° РїСЂРё СЃРјРµРЅРµ РєР°РЅР°Р»Р°.");
     }
     setActiveRoomId(roomId);
     setEditingPostId(null);
@@ -1778,18 +1778,18 @@ export default function HomePage() {
 
     const slug = normalizeChannelSlug(newChannelName);
     if (slug.length < 2) {
-      setChannelError("Название канала — минимум 2 символа (например, music).");
+      setChannelError("РќР°Р·РІР°РЅРёРµ РєР°РЅР°Р»Р° вЂ” РјРёРЅРёРјСѓРј 2 СЃРёРјРІРѕР»Р° (РЅР°РїСЂРёРјРµСЂ, music).");
       return;
     }
 
     if (rooms.some((r) => safeLower(r.name) === safeLower(slug))) {
-      setChannelError(`Канал #${slug} уже существует.`);
+      setChannelError(`РљР°РЅР°Р» #${slug} СѓР¶Рµ СЃСѓС‰РµСЃС‚РІСѓРµС‚.`);
       return;
     }
 
     const id = `${slug}-${Date.now().toString(36)}`;
     const topic =
-      newChannelTopic.trim() || `Канал сообщества, созданный ${currentUser.handle}`;
+      newChannelTopic.trim() || `РљР°РЅР°Р» СЃРѕРѕР±С‰РµСЃС‚РІР°, СЃРѕР·РґР°РЅРЅС‹Р№ ${currentUser.handle}`;
 
     const nextRoom: RoomItem = {
       id,
@@ -1816,34 +1816,34 @@ export default function HomePage() {
     const emailCheck = validateEmailAddress(regEmail);
 
     if (username.length < 2) {
-      setAuthError("Имя должно быть не короче 2 символов.");
+      setAuthError("РРјСЏ РґРѕР»Р¶РЅРѕ Р±С‹С‚СЊ РЅРµ РєРѕСЂРѕС‡Рµ 2 СЃРёРјРІРѕР»РѕРІ.");
       return;
     }
     if (handle.length < 3) {
       setAuthError(
-        "Укажи корректный @handle (минимум 2 символа: латиница, цифры, _)."
+        "РЈРєР°Р¶Рё РєРѕСЂСЂРµРєС‚РЅС‹Р№ @handle (РјРёРЅРёРјСѓРј 2 СЃРёРјРІРѕР»Р°: Р»Р°С‚РёРЅРёС†Р°, С†РёС„СЂС‹, _)."
       );
       return;
     }
     if (isReservedCreatorHandle(handle)) {
       setAuthError(
-        `Хэндл ${handle} зарезервирован за создателем Aura Space. Выбери другой @handle.`
+        `РҐСЌРЅРґР» ${handle} Р·Р°СЂРµР·РµСЂРІРёСЂРѕРІР°РЅ Р·Р° СЃРѕР·РґР°С‚РµР»РµРј Aura Space. Р’С‹Р±РµСЂРё РґСЂСѓРіРѕР№ @handle.`
       );
       return;
     }
     if (!emailCheck.valid) {
-      setAuthError(emailCheck.error || "Укажи корректный email.");
+      setAuthError(emailCheck.error || "РЈРєР°Р¶Рё РєРѕСЂСЂРµРєС‚РЅС‹Р№ email.");
       if (emailCheck.suggestion) {
         setAuthSuggestion(emailCheck.suggestion);
       }
       return;
     }
     if (regPassword.length < 4) {
-      setAuthError("Пароль должен быть не короче 4 символов.");
+      setAuthError("РџР°СЂРѕР»СЊ РґРѕР»Р¶РµРЅ Р±С‹С‚СЊ РЅРµ РєРѕСЂРѕС‡Рµ 4 СЃРёРјРІРѕР»РѕРІ.");
       return;
     }
     if (regPassword !== regPasswordConfirm) {
-      setAuthError("Пароли не совпадают.");
+      setAuthError("РџР°СЂРѕР»Рё РЅРµ СЃРѕРІРїР°РґР°СЋС‚.");
       return;
     }
 
@@ -1851,7 +1851,7 @@ export default function HomePage() {
       (a) => safeLower(a.handle) === safeLower(handle)
     );
     if (handleTaken) {
-      setAuthError(`Хэндл ${handle} уже занят. Выбери другой.`);
+      setAuthError(`РҐСЌРЅРґР» ${handle} СѓР¶Рµ Р·Р°РЅСЏС‚. Р’С‹Р±РµСЂРё РґСЂСѓРіРѕР№.`);
       return;
     }
 
@@ -1860,7 +1860,7 @@ export default function HomePage() {
     );
     if (emailTaken) {
       setAuthError(
-        "Аккаунт с таким email уже зарегистрирован. Войди в него или укажи другой адрес."
+        "РђРєРєР°СѓРЅС‚ СЃ С‚Р°РєРёРј email СѓР¶Рµ Р·Р°СЂРµРіРёСЃС‚СЂРёСЂРѕРІР°РЅ. Р’РѕР№РґРё РІ РЅРµРіРѕ РёР»Рё СѓРєР°Р¶Рё РґСЂСѓРіРѕР№ Р°РґСЂРµСЃ."
       );
       return;
     }
@@ -1871,7 +1871,7 @@ export default function HomePage() {
       const mxResult = await domainHasMxRecords(domain);
       if (mxResult === false) {
         setAuthError(
-          `Почтовый домен ${domain} не принимает входящую почту (MX-записи не найдены).`
+          `РџРѕС‡С‚РѕРІС‹Р№ РґРѕРјРµРЅ ${domain} РЅРµ РїСЂРёРЅРёРјР°РµС‚ РІС…РѕРґСЏС‰СѓСЋ РїРѕС‡С‚Сѓ (MX-Р·Р°РїРёСЃРё РЅРµ РЅР°Р№РґРµРЅС‹).`
         );
         return;
       }
@@ -1886,10 +1886,10 @@ export default function HomePage() {
         email: emailCheck.normalized,
         accountType: "personal",
         subscribers: 0,
-        bio: "Новый участник Aura Space.",
-        mood: "Исследует орбиту",
+        bio: "РќРѕРІС‹Р№ СѓС‡Р°СЃС‚РЅРёРє Aura Space.",
+        mood: "РСЃСЃР»РµРґСѓРµС‚ РѕСЂР±РёС‚Сѓ",
         presence: "online",
-        lastActive: "в сети",
+        lastActive: "РІ СЃРµС‚Рё",
         avatar: null,
         banner: BANNER_PRESETS[0].gradient,
         friends: [],
@@ -1923,11 +1923,11 @@ export default function HomePage() {
 
     const rawId = loginIdentifier.trim().toLowerCase();
     if (!rawId) {
-      setAuthError("Введи @handle, email или имя аккаунта.");
+      setAuthError("Р’РІРµРґРё @handle, email РёР»Рё РёРјСЏ Р°РєРєР°СѓРЅС‚Р°.");
       return;
     }
     if (!loginPassword) {
-      setAuthError("Введи пароль.");
+      setAuthError("Р’РІРµРґРё РїР°СЂРѕР»СЊ.");
       return;
     }
 
@@ -1944,21 +1944,21 @@ export default function HomePage() {
 
       if (!found) {
         setAuthError(
-          "Аккаунт не найден. Проверь @handle / email или зарегистрируйся."
+          "РђРєРєР°СѓРЅС‚ РЅРµ РЅР°Р№РґРµРЅ. РџСЂРѕРІРµСЂСЊ @handle / email РёР»Рё Р·Р°СЂРµРіРёСЃС‚СЂРёСЂСѓР№СЃСЏ."
         );
         return;
       }
 
       const candidateHash = await hashPassword(loginPassword, found.salt);
       if (candidateHash !== found.passwordHash) {
-        setAuthError("Неверный пароль.");
+        setAuthError("РќРµРІРµСЂРЅС‹Р№ РїР°СЂРѕР»СЊ.");
         return;
       }
 
       const updatedAcc: UserAccount = {
         ...found,
         presence: found.presence || "online",
-        lastActive: "в сети",
+        lastActive: "РІ СЃРµС‚Рё",
         saturnState: SATURN_DEFAULT,
       };
 
@@ -2003,45 +2003,45 @@ export default function HomePage() {
     const emailCheck = validateEmailAddress(addAccEmail);
 
     if (username.length < 2) {
-      setAddAccError("Имя должно быть не короче 2 символов.");
+      setAddAccError("РРјСЏ РґРѕР»Р¶РЅРѕ Р±С‹С‚СЊ РЅРµ РєРѕСЂРѕС‡Рµ 2 СЃРёРјРІРѕР»РѕРІ.");
       return;
     }
     if (handle.length < 3) {
       setAddAccError(
-        "Укажи корректный @handle (минимум 2 символа: латиница, цифры, _)."
+        "РЈРєР°Р¶Рё РєРѕСЂСЂРµРєС‚РЅС‹Р№ @handle (РјРёРЅРёРјСѓРј 2 СЃРёРјРІРѕР»Р°: Р»Р°С‚РёРЅРёС†Р°, С†РёС„СЂС‹, _)."
       );
       return;
     }
     if (isReservedCreatorHandle(handle)) {
       setAddAccError(
-        `Хэндл ${handle} зарезервирован за создателем Aura Space.`
+        `РҐСЌРЅРґР» ${handle} Р·Р°СЂРµР·РµСЂРІРёСЂРѕРІР°РЅ Р·Р° СЃРѕР·РґР°С‚РµР»РµРј Aura Space.`
       );
       return;
     }
     if (!emailCheck.valid) {
-      setAddAccError(emailCheck.error || "Укажи корректный email.");
+      setAddAccError(emailCheck.error || "РЈРєР°Р¶Рё РєРѕСЂСЂРµРєС‚РЅС‹Р№ email.");
       if (emailCheck.suggestion) {
         setAddAccSuggestion(emailCheck.suggestion);
       }
       return;
     }
     if (addAccPassword.length < 4) {
-      setAddAccError("Пароль должен быть не короче 4 символов.");
+      setAddAccError("РџР°СЂРѕР»СЊ РґРѕР»Р¶РµРЅ Р±С‹С‚СЊ РЅРµ РєРѕСЂРѕС‡Рµ 4 СЃРёРјРІРѕР»РѕРІ.");
       return;
     }
     if (addAccPassword !== addAccPasswordConfirm) {
-      setAddAccError("Пароли не совпадают.");
+      setAddAccError("РџР°СЂРѕР»Рё РЅРµ СЃРѕРІРїР°РґР°СЋС‚.");
       return;
     }
 
     if (accounts.some((a) => safeLower(a.handle) === safeLower(handle))) {
-      setAddAccError(`Хэндл ${handle} уже занят.`);
+      setAddAccError(`РҐСЌРЅРґР» ${handle} СѓР¶Рµ Р·Р°РЅСЏС‚.`);
       return;
     }
     if (
       accounts.some((a) => safeLower(a.email) === emailCheck.normalized)
     ) {
-      setAddAccError("Этот email уже используется другим аккаунтом.");
+      setAddAccError("Р­С‚РѕС‚ email СѓР¶Рµ РёСЃРїРѕР»СЊР·СѓРµС‚СЃСЏ РґСЂСѓРіРёРј Р°РєРєР°СѓРЅС‚РѕРј.");
       return;
     }
 
@@ -2051,7 +2051,7 @@ export default function HomePage() {
       const mxResult = await domainHasMxRecords(domain);
       if (mxResult === false) {
         setAddAccError(
-          `Почтовый домен ${domain} не принимает входящую почту (MX-записи не найдены).`
+          `РџРѕС‡С‚РѕРІС‹Р№ РґРѕРјРµРЅ ${domain} РЅРµ РїСЂРёРЅРёРјР°РµС‚ РІС…РѕРґСЏС‰СѓСЋ РїРѕС‡С‚Сѓ (MX-Р·Р°РїРёСЃРё РЅРµ РЅР°Р№РґРµРЅС‹).`
         );
         return;
       }
@@ -2070,10 +2070,10 @@ export default function HomePage() {
         email: emailCheck.normalized,
         accountType: "personal",
         subscribers: 0,
-        bio: "Дополнительный профиль в Aura Space.",
-        mood: "В сети",
+        bio: "Р”РѕРїРѕР»РЅРёС‚РµР»СЊРЅС‹Р№ РїСЂРѕС„РёР»СЊ РІ Aura Space.",
+        mood: "Р’ СЃРµС‚Рё",
         presence: "online",
-        lastActive: "в сети",
+        lastActive: "РІ СЃРµС‚Рё",
         avatar: null,
         banner: BANNER_PRESETS[1].gradient,
         friends: [],
@@ -2116,11 +2116,11 @@ export default function HomePage() {
     const file = e.target.files?.[0];
     if (!file) return;
     if (!file.type.startsWith("image/")) {
-      setProfileError("Выбери файл изображения (PNG, JPG, WEBP).");
+      setProfileError("Р’С‹Р±РµСЂРё С„Р°Р№Р» РёР·РѕР±СЂР°Р¶РµРЅРёСЏ (PNG, JPG, WEBP).");
       return;
     }
     if (file.size > MAX_POST_IMAGE_BYTES) {
-      setProfileError("Файл аватарки слишком большой (максимум 2.5 МБ).");
+      setProfileError("Р¤Р°Р№Р» Р°РІР°С‚Р°СЂРєРё СЃР»РёС€РєРѕРј Р±РѕР»СЊС€РѕР№ (РјР°РєСЃРёРјСѓРј 2.5 РњР‘).");
       return;
     }
     const reader = new FileReader();
@@ -2138,11 +2138,11 @@ export default function HomePage() {
     const file = e.target.files?.[0];
     if (!file) return;
     if (!file.type.startsWith("image/")) {
-      setProfileError("Для шапки профиля выбери изображение (PNG, JPG, WEBP).");
+      setProfileError("Р”Р»СЏ С€Р°РїРєРё РїСЂРѕС„РёР»СЏ РІС‹Р±РµСЂРё РёР·РѕР±СЂР°Р¶РµРЅРёРµ (PNG, JPG, WEBP).");
       return;
     }
     if (file.size > MAX_BANNER_IMAGE_BYTES) {
-      setProfileError("Файл шапки слишком большой (максимум 2 МБ).");
+      setProfileError("Р¤Р°Р№Р» С€Р°РїРєРё СЃР»РёС€РєРѕРј Р±РѕР»СЊС€РѕР№ (РјР°РєСЃРёРјСѓРј 2 РњР‘).");
       return;
     }
     const reader = new FileReader();
@@ -2160,11 +2160,11 @@ export default function HomePage() {
     const file = e.target.files?.[0];
     if (!file) return;
     if (!file.type.startsWith("image/")) {
-      setPostError("К посту можно прикрепить только изображение.");
+      setPostError("Рљ РїРѕСЃС‚Сѓ РјРѕР¶РЅРѕ РїСЂРёРєСЂРµРїРёС‚СЊ С‚РѕР»СЊРєРѕ РёР·РѕР±СЂР°Р¶РµРЅРёРµ.");
       return;
     }
     if (file.size > MAX_POST_IMAGE_BYTES) {
-      setPostError("Изображение не должно превышать 2.5 МБ.");
+      setPostError("РР·РѕР±СЂР°Р¶РµРЅРёРµ РЅРµ РґРѕР»Р¶РЅРѕ РїСЂРµРІС‹С€Р°С‚СЊ 2.5 РњР‘.");
       return;
     }
     const reader = new FileReader();
@@ -2185,7 +2185,7 @@ export default function HomePage() {
 
     const nextName = profileUsername.trim();
     if (nextName.length < 2) {
-      setProfileError("Имя должно быть не короче 2 символов.");
+      setProfileError("РРјСЏ РґРѕР»Р¶РЅРѕ Р±С‹С‚СЊ РЅРµ РєРѕСЂРѕС‡Рµ 2 СЃРёРјРІРѕР»РѕРІ.");
       return;
     }
 
@@ -2193,7 +2193,7 @@ export default function HomePage() {
     let nextSalt = currentUser.salt;
     if (profileNewPassword.trim().length > 0) {
       if (profileNewPassword.trim().length < 4) {
-        setProfileError("Новый пароль должен быть не короче 4 символов.");
+        setProfileError("РќРѕРІС‹Р№ РїР°СЂРѕР»СЊ РґРѕР»Р¶РµРЅ Р±С‹С‚СЊ РЅРµ РєРѕСЂРѕС‡Рµ 4 СЃРёРјРІРѕР»РѕРІ.");
         return;
       }
       nextSalt = generateSalt();
@@ -2207,11 +2207,11 @@ export default function HomePage() {
       ...currentUser,
       username: nextName,
       presence: profilePresence,
-      mood: profileMood.trim() || "В сети",
+      mood: profileMood.trim() || "Р’ СЃРµС‚Рё",
       bio: profileBio.trim(),
       avatar: profileAvatar,
       banner: profileBanner || BANNER_PRESETS[0].gradient,
-      lastActive: "в сети",
+      lastActive: "РІ СЃРµС‚Рё",
       passwordHash: nextPasswordHash,
       salt: nextSalt,
       saturnState: SATURN_BOOST,
@@ -2254,11 +2254,11 @@ export default function HomePage() {
     setFriendMessage(null);
     const normalized = normalizeHandle(targetHandleRaw ?? friendHandleInput);
     if (!normalized || normalized.length < 3) {
-      setFriendMessage("Введи корректный @handle друга (например, @alex).");
+      setFriendMessage("Р’РІРµРґРё РєРѕСЂСЂРµРєС‚РЅС‹Р№ @handle РґСЂСѓРіР° (РЅР°РїСЂРёРјРµСЂ, @alex).");
       return;
     }
     if (safeLower(normalized) === safeLower(currentUser.handle)) {
-      setFriendMessage("Нельзя добавить самого себя в друзья.");
+      setFriendMessage("РќРµР»СЊР·СЏ РґРѕР±Р°РІРёС‚СЊ СЃР°РјРѕРіРѕ СЃРµР±СЏ РІ РґСЂСѓР·СЊСЏ.");
       return;
     }
 
@@ -2267,7 +2267,7 @@ export default function HomePage() {
     );
     if (!exists) {
       setFriendMessage(
-        `Пользователь ${normalized} пока не зарегистрирован в Aura Space.`
+        `РџРѕР»СЊР·РѕРІР°С‚РµР»СЊ ${normalized} РїРѕРєР° РЅРµ Р·Р°СЂРµРіРёСЃС‚СЂРёСЂРѕРІР°РЅ РІ Aura Space.`
       );
       return;
     }
@@ -2276,7 +2276,7 @@ export default function HomePage() {
       (h) => safeLower(h) === safeLower(normalized)
     );
     if (alreadyFriend) {
-      setFriendMessage(`${normalized} уже есть в твоём списке друзей.`);
+      setFriendMessage(`${normalized} СѓР¶Рµ РµСЃС‚СЊ РІ С‚РІРѕС‘Рј СЃРїРёСЃРєРµ РґСЂСѓР·РµР№.`);
       return;
     }
 
@@ -2290,7 +2290,7 @@ export default function HomePage() {
     if (!targetHandleRaw) {
       setFriendHandleInput("");
     }
-    setFriendMessage(`Добавил ${normalized} в друзья!`);
+    setFriendMessage(`Р”РѕР±Р°РІРёР» ${normalized} РІ РґСЂСѓР·СЊСЏ!`);
     setSaturnState(SATURN_BOOST);
   };
 
@@ -2320,7 +2320,7 @@ export default function HomePage() {
     const effectiveText = repostTarget ? noteTrimmed : trimmed;
 
     if (!effectiveText && !postImage && !repostTarget) {
-      setPostError("Напиши текст поста или прикрепи картинку.");
+      setPostError("РќР°РїРёС€Рё С‚РµРєСЃС‚ РїРѕСЃС‚Р° РёР»Рё РїСЂРёРєСЂРµРїРё РєР°СЂС‚РёРЅРєСѓ.");
       return;
     }
 
@@ -2332,7 +2332,7 @@ export default function HomePage() {
       avatar: currentUser.avatar || null,
       text: effectiveText,
       image: repostTarget ? null : postImage,
-      createdAt: "только что",
+      createdAt: "С‚РѕР»СЊРєРѕ С‡С‚Рѕ",
       pinned: false,
       likes: 0,
       likedByMe: false,
@@ -2474,7 +2474,7 @@ export default function HomePage() {
       handle: currentUser.handle,
       avatar: currentUser.avatar || null,
       text: trimmed,
-      createdAt: "только что",
+      createdAt: "С‚РѕР»СЊРєРѕ С‡С‚Рѕ",
     };
 
     let updatedPost: PostItem | null = null;
@@ -2601,7 +2601,7 @@ export default function HomePage() {
     return (
       <div className="min-h-screen overflow-x-hidden bg-[#090414] text-[#F8F5FF] flex items-center justify-center p-4">
         <div className="text-sm font-bold tracking-wider text-purple-200/80">
-          Загрузка Aura Space...
+          Р—Р°РіСЂСѓР·РєР° Aura Space...
         </div>
       </div>
     );
@@ -2620,7 +2620,7 @@ export default function HomePage() {
               Aura Space
             </h1>
             <p className="mt-1 text-xs text-purple-200/75">
-              Войди в свой аккаунт или зарегистрируйся, чтобы попасть в орбиту
+              Р’РѕР№РґРё РІ СЃРІРѕР№ Р°РєРєР°СѓРЅС‚ РёР»Рё Р·Р°СЂРµРіРёСЃС‚СЂРёСЂСѓР№СЃСЏ, С‡С‚РѕР±С‹ РїРѕРїР°СЃС‚СЊ РІ РѕСЂР±РёС‚Сѓ
             </p>
           </div>
 
@@ -2638,7 +2638,7 @@ export default function HomePage() {
                   : "text-purple-200/75 hover:text-white"
               }`}
             >
-              Вход
+              Р’С…РѕРґ
             </button>
             <button
               type="button"
@@ -2653,7 +2653,7 @@ export default function HomePage() {
                   : "text-purple-200/75 hover:text-white"
               }`}
             >
-              Регистрация
+              Р РµРіРёСЃС‚СЂР°С†РёСЏ
             </button>
           </div>
 
@@ -2670,7 +2670,7 @@ export default function HomePage() {
                   }}
                   className="mt-1.5 inline-flex items-center gap-1 rounded-lg border border-pink-400/40 bg-[#FF2A85]/20 px-2.5 py-1 text-[11px] font-bold text-white hover:bg-[#FF2A85]/35"
                 >
-                  Подставить {authSuggestion}
+                  РџРѕРґСЃС‚Р°РІРёС‚СЊ {authSuggestion}
                 </button>
               )}
             </div>
@@ -2680,13 +2680,13 @@ export default function HomePage() {
             <form onSubmit={handleLogin} className="space-y-3.5">
               <div>
                 <label className="block text-xs font-bold text-purple-200/85 mb-1">
-                  @handle, email или имя
+                  @handle, email РёР»Рё РёРјСЏ
                 </label>
                 <input
                   type="text"
                   value={loginIdentifier}
                   onChange={(e) => setLoginIdentifier(e.target.value)}
-                  placeholder="@handle или name@gmail.com"
+                  placeholder="@handle РёР»Рё name@gmail.com"
                   autoComplete="username"
                   className="w-full rounded-xl border border-purple-500/25 bg-[#090414] px-3.5 py-2.5 text-sm text-white placeholder-purple-300/40 focus:border-[#FF2A85] focus:outline-none"
                 />
@@ -2694,13 +2694,13 @@ export default function HomePage() {
 
               <div>
                 <label className="block text-xs font-bold text-purple-200/85 mb-1">
-                  Пароль
+                  РџР°СЂРѕР»СЊ
                 </label>
                 <input
                   type="password"
                   value={loginPassword}
                   onChange={(e) => setLoginPassword(e.target.value)}
-                  placeholder="••••••••"
+                  placeholder="вЂўвЂўвЂўвЂўвЂўвЂўвЂўвЂў"
                   autoComplete="current-password"
                   className="w-full rounded-xl border border-purple-500/25 bg-[#090414] px-3.5 py-2.5 text-sm text-white placeholder-purple-300/40 focus:border-[#FF2A85] focus:outline-none"
                 />
@@ -2711,27 +2711,27 @@ export default function HomePage() {
                 disabled={authSubmitting}
                 className="w-full rounded-xl bg-gradient-to-r from-[#9D4EDD] to-[#FF2A85] py-3 text-sm font-extrabold text-white shadow-lg hover:opacity-95 disabled:opacity-50 transition"
               >
-                {authSubmitting ? "Входим..." : "Войти в Aura Space"}
+                {authSubmitting ? "Р’С…РѕРґРёРј..." : "Р’РѕР№С‚Рё РІ Aura Space"}
               </button>
             </form>
           ) : (
             <form onSubmit={handleRegister} className="space-y-3">
               <div>
                 <label className="block text-xs font-bold text-purple-200/85 mb-1">
-                  Имя
+                  РРјСЏ
                 </label>
                 <input
                   type="text"
                   value={regUsername}
                   onChange={(e) => setRegUsername(e.target.value)}
-                  placeholder="Как тебя называть"
+                  placeholder="РљР°Рє С‚РµР±СЏ РЅР°Р·С‹РІР°С‚СЊ"
                   className="w-full rounded-xl border border-purple-500/25 bg-[#090414] px-3.5 py-2.5 text-sm text-white placeholder-purple-300/40 focus:border-[#FF2A85] focus:outline-none"
                 />
               </div>
 
               <div>
                 <label className="block text-xs font-bold text-purple-200/85 mb-1">
-                  Уникальный @handle
+                  РЈРЅРёРєР°Р»СЊРЅС‹Р№ @handle
                 </label>
                 <input
                   type="text"
@@ -2744,7 +2744,7 @@ export default function HomePage() {
 
               <div>
                 <label className="block text-xs font-bold text-purple-200/85 mb-1">
-                  Электронная почта
+                  Р­Р»РµРєС‚СЂРѕРЅРЅР°СЏ РїРѕС‡С‚Р°
                 </label>
                 <input
                   type="email"
@@ -2762,26 +2762,26 @@ export default function HomePage() {
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
                 <div>
                   <label className="block text-xs font-bold text-purple-200/85 mb-1">
-                    Пароль
+                    РџР°СЂРѕР»СЊ
                   </label>
                   <input
                     type="password"
                     value={regPassword}
                     onChange={(e) => setRegPassword(e.target.value)}
-                    placeholder="Мин. 4 симв."
+                    placeholder="РњРёРЅ. 4 СЃРёРјРІ."
                     autoComplete="new-password"
                     className="w-full rounded-xl border border-purple-500/25 bg-[#090414] px-3 py-2.5 text-sm text-white placeholder-purple-300/40 focus:border-[#FF2A85] focus:outline-none"
                   />
                 </div>
                 <div>
                   <label className="block text-xs font-bold text-purple-200/85 mb-1">
-                    Повтор пароля
+                    РџРѕРІС‚РѕСЂ РїР°СЂРѕР»СЏ
                   </label>
                   <input
                     type="password"
                     value={regPasswordConfirm}
                     onChange={(e) => setRegPasswordConfirm(e.target.value)}
-                    placeholder="Повтори пароль"
+                    placeholder="РџРѕРІС‚РѕСЂРё РїР°СЂРѕР»СЊ"
                     autoComplete="new-password"
                     className="w-full rounded-xl border border-purple-500/25 bg-[#090414] px-3 py-2.5 text-sm text-white placeholder-purple-300/40 focus:border-[#FF2A85] focus:outline-none"
                   />
@@ -2793,7 +2793,7 @@ export default function HomePage() {
                 disabled={authSubmitting}
                 className="w-full rounded-xl bg-gradient-to-r from-[#9D4EDD] to-[#FF2A85] py-3 text-sm font-extrabold text-white shadow-lg hover:opacity-95 disabled:opacity-50 transition mt-1"
               >
-                {authSubmitting ? "Создаём..." : "Создать аккаунт"}
+                {authSubmitting ? "РЎРѕР·РґР°С‘Рј..." : "РЎРѕР·РґР°С‚СЊ Р°РєРєР°СѓРЅС‚"}
               </button>
             </form>
           )}
@@ -2838,7 +2838,7 @@ export default function HomePage() {
                   : "bg-white/5 text-purple-200/80 hover:bg-white/10 hover:text-white"
               }`}
             >
-              Лента
+              Р›РµРЅС‚Р°
             </button>
             <button
               type="button"
@@ -2849,7 +2849,7 @@ export default function HomePage() {
                   : "bg-white/5 text-purple-200/80 hover:bg-white/10 hover:text-white"
               }`}
             >
-              Чат
+              Р§Р°С‚
             </button>
             <button
               type="button"
@@ -2861,7 +2861,7 @@ export default function HomePage() {
               }`}
             >
               <Users className="h-3.5 w-3.5" />
-              <span>Друзья ({friendsList.length})</span>
+              <span>Р”СЂСѓР·СЊСЏ ({friendsList.length})</span>
             </button>
             <button
               type="button"
@@ -2872,7 +2872,7 @@ export default function HomePage() {
                   : "bg-white/5 text-purple-200/80 hover:bg-white/10 hover:text-white"
               }`}
             >
-              Профиль
+              РџСЂРѕС„РёР»СЊ
             </button>
           </nav>
 
@@ -2906,26 +2906,26 @@ export default function HomePage() {
                 setAddAccSuggestion(null);
                 setShowAddAccountModal(true);
               }}
-              title="Добавить или переключить аккаунт"
+              title="Р”РѕР±Р°РІРёС‚СЊ РёР»Рё РїРµСЂРµРєР»СЋС‡РёС‚СЊ Р°РєРєР°СѓРЅС‚"
               className="inline-flex items-center gap-1 rounded-xl border border-purple-500/25 bg-white/5 px-2.5 py-2 text-xs font-bold text-purple-100 hover:border-pink-400/40 hover:bg-white/10 transition whitespace-nowrap"
             >
               <UserPlus className="h-3.5 w-3.5 text-pink-300" />
-              <span className="hidden sm:inline">Аккаунт</span>
+              <span className="hidden sm:inline">РђРєРєР°СѓРЅС‚</span>
             </button>
 
             <button
               type="button"
               onClick={handleLogout}
-              title="Выйти из аккаунта"
+              title="Р’С‹Р№С‚Рё РёР· Р°РєРєР°СѓРЅС‚Р°"
               className="inline-flex items-center gap-1 rounded-xl border border-purple-500/25 bg-white/5 px-2.5 py-2 text-xs font-bold text-purple-200/80 hover:border-pink-500/40 hover:text-white transition whitespace-nowrap"
             >
               <LogOut className="h-3.5 w-3.5" />
-              <span className="hidden sm:inline">Выйти</span>
+              <span className="hidden sm:inline">Р’С‹Р№С‚Рё</span>
             </button>
           </div>
         </div>
 
-        {/* Быстрая полоса каналов на телефонах и планшетах */}
+        {/* Р‘С‹СЃС‚СЂР°СЏ РїРѕР»РѕСЃР° РєР°РЅР°Р»РѕРІ РЅР° С‚РµР»РµС„РѕРЅР°С… Рё РїР»Р°РЅС€РµС‚Р°С… */}
         <div className="flex lg:hidden items-center justify-between gap-2 border-t border-purple-500/15 bg-[#090414]/95 px-3 py-2">
           <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar min-w-0 flex-1">
             {rooms.map((room) => {
@@ -2953,7 +2953,7 @@ export default function HomePage() {
             onClick={() => setMobileSidebarOpen((v) => !v)}
             className="inline-flex shrink-0 items-center gap-1 rounded-lg border border-purple-500/25 bg-white/5 px-2.5 py-1.5 text-xs font-bold text-pink-200"
           >
-            <span>{inCall ? "Голос" : "Меню"}</span>
+            <span>{inCall ? "Р“РѕР»РѕСЃ" : "РњРµРЅСЋ"}</span>
             {mobileSidebarOpen ? (
               <ChevronUp className="h-3.5 w-3.5" />
             ) : (
@@ -2972,7 +2972,7 @@ export default function HomePage() {
           <div className="rounded-2xl border border-purple-500/20 bg-[#130926]/90 p-3.5">
             <div className="flex items-center justify-between mb-2.5">
               <span className="text-[11px] font-extrabold uppercase tracking-wider text-purple-200/70">
-                Каналы
+                РљР°РЅР°Р»С‹
               </span>
               <button
                 type="button"
@@ -2980,11 +2980,11 @@ export default function HomePage() {
                   setShowChannelForm((v) => !v);
                   setChannelError(null);
                 }}
-                title="Создать новый канал"
+                title="РЎРѕР·РґР°С‚СЊ РЅРѕРІС‹Р№ РєР°РЅР°Р»"
                 className="inline-flex items-center gap-1 rounded-lg border border-fuchsia-500/30 bg-[#9D4EDD]/15 px-2 py-1 text-[11px] font-bold text-pink-200 hover:bg-[#9D4EDD]/25 transition"
               >
                 <Plus className="h-3 w-3" />
-                <span>Новый</span>
+                <span>РќРѕРІС‹Р№</span>
               </button>
             </div>
 
@@ -2997,14 +2997,14 @@ export default function HomePage() {
                   type="text"
                   value={newChannelName}
                   onChange={(e) => setNewChannelName(e.target.value)}
-                  placeholder="название-канала"
+                  placeholder="РЅР°Р·РІР°РЅРёРµ-РєР°РЅР°Р»Р°"
                   className="w-full rounded-lg border border-purple-500/25 bg-[#130926] px-2.5 py-2 text-xs text-white placeholder-purple-300/40 focus:border-[#FF2A85] focus:outline-none"
                 />
                 <input
                   type="text"
                   value={newChannelTopic}
                   onChange={(e) => setNewChannelTopic(e.target.value)}
-                  placeholder="Тема канала (необязательно)"
+                  placeholder="РўРµРјР° РєР°РЅР°Р»Р° (РЅРµРѕР±СЏР·Р°С‚РµР»СЊРЅРѕ)"
                   className="w-full rounded-lg border border-purple-500/25 bg-[#130926] px-2.5 py-2 text-xs text-white placeholder-purple-300/40 focus:border-[#FF2A85] focus:outline-none"
                 />
                 {channelError && (
@@ -3021,13 +3021,13 @@ export default function HomePage() {
                     }}
                     className="rounded-lg px-2.5 py-1.5 text-[11px] font-bold text-purple-200/70 hover:text-white"
                   >
-                    Отмена
+                    РћС‚РјРµРЅР°
                   </button>
                   <button
                     type="submit"
                     className="rounded-lg bg-gradient-to-r from-[#9D4EDD] to-[#FF2A85] px-3 py-1.5 text-[11px] font-extrabold text-white"
                   >
-                    Создать
+                    РЎРѕР·РґР°С‚СЊ
                   </button>
                 </div>
               </form>
@@ -3066,7 +3066,7 @@ export default function HomePage() {
           <div className="rounded-2xl border border-purple-500/20 bg-[#130926]/90 p-3.5 space-y-3">
             <div className="flex items-center justify-between">
               <span className="text-[11px] font-extrabold uppercase tracking-wider text-purple-200/70">
-                Голос · #{activeRoom.name}
+                Р“РѕР»РѕСЃ В· #{activeRoom.name}
               </span>
               {inCall && (
                 <span className="rounded-md bg-emerald-500/15 px-2 py-0.5 text-[11px] font-extrabold text-emerald-300">
@@ -3087,12 +3087,12 @@ export default function HomePage() {
               {inCall ? (
                 <>
                   <PhoneOff className="h-4 w-4" />
-                  <span>Выйти из голоса</span>
+                  <span>Р’С‹Р№С‚Рё РёР· РіРѕР»РѕСЃР°</span>
                 </>
               ) : (
                 <>
                   <PhoneCall className="h-4 w-4" />
-                  <span>Войти в голос</span>
+                  <span>Р’РѕР№С‚Рё РІ РіРѕР»РѕСЃ</span>
                 </>
               )}
             </button>
@@ -3112,12 +3112,12 @@ export default function HomePage() {
                     {muted ? (
                       <>
                         <MicOff className="h-3.5 w-3.5" />
-                        <span>Микрофон выкл</span>
+                        <span>РњРёРєСЂРѕС„РѕРЅ РІС‹РєР»</span>
                       </>
                     ) : (
                       <>
                         <Mic className="h-3.5 w-3.5 text-emerald-300" />
-                        <span>Микрофон вкл</span>
+                        <span>РњРёРєСЂРѕС„РѕРЅ РІРєР»</span>
                       </>
                     )}
                   </button>
@@ -3134,12 +3134,12 @@ export default function HomePage() {
                     {deafened ? (
                       <>
                         <VolumeX className="h-3.5 w-3.5" />
-                        <span>Звук выкл</span>
+                        <span>Р—РІСѓРє РІС‹РєР»</span>
                       </>
                     ) : (
                       <>
                         <Volume2 className="h-3.5 w-3.5 text-pink-300" />
-                        <span>Звук вкл</span>
+                        <span>Р—РІСѓРє РІРєР»</span>
                       </>
                     )}
                   </button>
@@ -3147,18 +3147,18 @@ export default function HomePage() {
 
                 <div>
                   <div className="text-[11px] font-bold text-purple-200/70 mb-1">
-                    Уровень микрофона
+                    РЈСЂРѕРІРµРЅСЊ РјРёРєСЂРѕС„РѕРЅР°
                   </div>
                   <VoiceLevelBar level={voiceLevel} />
                 </div>
 
                 <div className="space-y-1.5 pt-1 border-t border-purple-500/15">
                   <div className="text-[11px] font-bold text-purple-200/75">
-                    В комнате ({1 + remotePeers.length})
+                    Р’ РєРѕРјРЅР°С‚Рµ ({1 + remotePeers.length})
                   </div>
                   <div className="flex items-center justify-between rounded-lg bg-[#090414]/80 px-2.5 py-1.5 text-xs">
                     <span className="font-bold text-white truncate">
-                      {currentUser.username} (ты)
+                      {currentUser.username} (С‚С‹)
                     </span>
                     <span className="text-[10px] font-semibold text-emerald-300">
                       {muted ? "muted" : "live"}
@@ -3191,7 +3191,7 @@ export default function HomePage() {
           <div className="rounded-2xl border border-purple-500/20 bg-[#130926]/90 p-3.5">
             <div className="flex items-center justify-between mb-2.5">
               <span className="text-[11px] font-extrabold uppercase tracking-wider text-purple-200/70">
-                Участники ({accounts.length})
+                РЈС‡Р°СЃС‚РЅРёРєРё ({accounts.length})
               </span>
             </div>
             <div className="space-y-2 max-h-64 overflow-y-auto pr-0.5">
@@ -3255,7 +3255,7 @@ export default function HomePage() {
                       <div className="space-y-2">
                         <div className="flex items-center justify-between gap-2 rounded-xl border border-fuchsia-500/30 bg-[#090414]/80 px-3 py-2 text-xs">
                           <span className="font-bold text-pink-200 truncate">
-                            Репост поста от {repostTarget.handle}
+                            Р РµРїРѕСЃС‚ РїРѕСЃС‚Р° РѕС‚ {repostTarget.handle}
                           </span>
                           <button
                             type="button"
@@ -3272,12 +3272,12 @@ export default function HomePage() {
                           type="text"
                           value={repostNote}
                           onChange={(e) => setRepostNote(e.target.value)}
-                          placeholder="Добавь свой комментарий к репосту (необязательно)..."
+                          placeholder="Р”РѕР±Р°РІСЊ СЃРІРѕР№ РєРѕРјРјРµРЅС‚Р°СЂРёР№ Рє СЂРµРїРѕСЃС‚Сѓ (РЅРµРѕР±СЏР·Р°С‚РµР»СЊРЅРѕ)..."
                           className="w-full rounded-xl border border-purple-500/25 bg-[#090414] px-3.5 py-2.5 text-sm text-white placeholder-purple-300/40 focus:border-[#FF2A85] focus:outline-none"
                         />
                         <div className="rounded-xl border border-purple-500/20 bg-[#090414]/60 p-3 text-xs text-purple-100/90">
                           <div className="font-bold text-pink-200 mb-1 break-words">
-                            {repostTarget.author} · {repostTarget.handle}
+                            {repostTarget.author} В· {repostTarget.handle}
                           </div>
                           <p className="whitespace-pre-wrap break-words">
                             {repostTarget.text}
@@ -3289,7 +3289,7 @@ export default function HomePage() {
                         rows={3}
                         value={postText}
                         onChange={(e) => setPostText(e.target.value)}
-                        placeholder={`Что нового в #${activeRoom.name}? Используй @handle...`}
+                        placeholder={`Р§С‚Рѕ РЅРѕРІРѕРіРѕ РІ #${activeRoom.name}? РСЃРїРѕР»СЊР·СѓР№ @handle...`}
                         className="w-full resize-none rounded-xl border border-purple-500/25 bg-[#090414] px-3.5 py-2.5 text-sm text-white placeholder-purple-300/40 focus:border-[#FF2A85] focus:outline-none"
                       />
                     )}
@@ -3298,7 +3298,7 @@ export default function HomePage() {
                       <div className="relative inline-block max-w-full">
                         <img
                           src={postImage}
-                          alt="Предпросмотр"
+                          alt="РџСЂРµРґРїСЂРѕСЃРјРѕС‚СЂ"
                           className="max-h-56 max-w-full rounded-xl border border-purple-500/25 object-cover"
                         />
                         <button
@@ -3339,7 +3339,7 @@ export default function HomePage() {
                               className="inline-flex items-center gap-1.5 rounded-xl border border-purple-500/25 bg-white/5 px-3 py-2 text-xs font-bold text-purple-100 hover:border-pink-400/40 hover:bg-white/10 transition"
                             >
                               <ImagePlus className="h-3.5 w-3.5 text-pink-300" />
-                              <span>Фото</span>
+                              <span>Р¤РѕС‚Рѕ</span>
                             </button>
                           </>
                         )}
@@ -3350,7 +3350,7 @@ export default function HomePage() {
                         className="inline-flex items-center gap-1.5 rounded-xl bg-gradient-to-r from-[#9D4EDD] to-[#FF2A85] px-4 py-2.5 text-xs font-extrabold text-white shadow-md hover:opacity-95 transition"
                       >
                         <Send className="h-3.5 w-3.5" />
-                        <span>{repostTarget ? "Сделать репост" : "Опубликовать"}</span>
+                        <span>{repostTarget ? "РЎРґРµР»Р°С‚СЊ СЂРµРїРѕСЃС‚" : "РћРїСѓР±Р»РёРєРѕРІР°С‚СЊ"}</span>
                       </button>
                     </div>
                   </div>
@@ -3363,11 +3363,11 @@ export default function HomePage() {
                     <div className="flex items-center gap-1.5 text-[11px] font-extrabold uppercase tracking-wider text-amber-300">
                       <Pin className="h-3.5 w-3.5 shrink-0" />
                       <span className="truncate">
-                        Закреплённый пост · {pinnedPost.handle}
+                        Р—Р°РєСЂРµРїР»С‘РЅРЅС‹Р№ РїРѕСЃС‚ В· {pinnedPost.handle}
                       </span>
                     </div>
                     <p className="mt-1 text-xs text-amber-50/95 line-clamp-2 break-words">
-                      {pinnedPost.text || "Медиапост"}
+                      {pinnedPost.text || "РњРµРґРёР°РїРѕСЃС‚"}
                     </p>
                   </div>
                   {canManageItem(pinnedPost.handle) && (
@@ -3376,7 +3376,7 @@ export default function HomePage() {
                       onClick={() => handleTogglePinPost(pinnedPost.id)}
                       className="shrink-0 rounded-lg border border-amber-400/30 bg-amber-950/50 px-2.5 py-1.5 text-[11px] font-bold text-amber-200 hover:bg-amber-900/50"
                     >
-                      Открепить
+                      РћС‚РєСЂРµРїРёС‚СЊ
                     </button>
                   )}
                 </div>
@@ -3385,7 +3385,7 @@ export default function HomePage() {
               <div className="space-y-3.5">
                 {roomPosts.length === 0 ? (
                   <div className="rounded-2xl border border-purple-500/20 bg-[#130926]/80 p-8 text-center text-sm text-purple-200/70">
-                    В канале #{activeRoom.name} пока нет постов. Напиши первый!
+                    Р’ РєР°РЅР°Р»Рµ #{activeRoom.name} РїРѕРєР° РЅРµС‚ РїРѕСЃС‚РѕРІ. РќР°РїРёС€Рё РїРµСЂРІС‹Р№!
                   </div>
                 ) : (
                   roomPosts.map((post) => {
@@ -3462,13 +3462,13 @@ export default function HomePage() {
                                 {post.pinned && (
                                   <span className="inline-flex items-center gap-1 rounded-md border border-amber-400/35 bg-amber-950/50 px-1.5 py-0.5 text-[10px] font-bold text-amber-200">
                                     <Pin className="h-2.5 w-2.5" />
-                                    <span>Закреп</span>
+                                    <span>Р—Р°РєСЂРµРї</span>
                                   </span>
                                 )}
                               </div>
                               <div className="text-[11px] text-purple-200/60">
                                 {post.createdAt}
-                                {post.editedAt ? ` · ред. ${post.editedAt}` : ""}
+                                {post.editedAt ? ` В· СЂРµРґ. ${post.editedAt}` : ""}
                               </div>
                             </div>
                           </div>
@@ -3479,7 +3479,7 @@ export default function HomePage() {
                                 <button
                                   type="button"
                                   onClick={() => handleTogglePinPost(post.id)}
-                                  title={post.pinned ? "Открепить" : "Закрепить"}
+                                  title={post.pinned ? "РћС‚РєСЂРµРїРёС‚СЊ" : "Р—Р°РєСЂРµРїРёС‚СЊ"}
                                   className={`rounded-lg p-1.5 text-xs transition ${
                                     post.pinned
                                       ? "bg-amber-500/20 text-amber-300"
@@ -3491,7 +3491,7 @@ export default function HomePage() {
                                 <button
                                   type="button"
                                   onClick={() => handleStartEditPost(post)}
-                                  title="Редактировать пост"
+                                  title="Р РµРґР°РєС‚РёСЂРѕРІР°С‚СЊ РїРѕСЃС‚"
                                   className="rounded-lg p-1.5 text-purple-200/65 hover:bg-white/10 hover:text-white transition"
                                 >
                                   <Edit3 className="h-3.5 w-3.5" />
@@ -3499,7 +3499,7 @@ export default function HomePage() {
                                 <button
                                   type="button"
                                   onClick={() => handleDeletePost(post.id)}
-                                  title="Удалить пост"
+                                  title="РЈРґР°Р»РёС‚СЊ РїРѕСЃС‚"
                                   className="rounded-lg p-1.5 text-purple-200/65 hover:bg-rose-950/60 hover:text-rose-300 transition"
                                 >
                                   <Trash2 className="h-3.5 w-3.5" />
@@ -3528,14 +3528,14 @@ export default function HomePage() {
                                 }}
                                 className="rounded-lg px-3 py-1.5 text-xs font-bold text-purple-200/75 hover:text-white"
                               >
-                                Отмена
+                                РћС‚РјРµРЅР°
                               </button>
                               <button
                                 type="button"
                                 onClick={() => handleSaveEditPost(post.id)}
                                 className="rounded-lg bg-gradient-to-r from-[#9D4EDD] to-[#FF2A85] px-3 py-1.5 text-xs font-extrabold text-white"
                               >
-                                Сохранить
+                                РЎРѕС…СЂР°РЅРёС‚СЊ
                               </button>
                             </div>
                           </div>
@@ -3560,7 +3560,7 @@ export default function HomePage() {
                                 {post.repostOf.author} ({post.repostOf.handle})
                               </span>
                               <span className="text-[11px] font-normal text-purple-200/60">
-                                · {post.repostOf.createdAt}
+                                В· {post.repostOf.createdAt}
                               </span>
                             </div>
                             {post.repostOf.text && (
@@ -3571,7 +3571,7 @@ export default function HomePage() {
                             {post.repostOf.image && (
                               <img
                                 src={post.repostOf.image}
-                                alt="Вложение репоста"
+                                alt="Р’Р»РѕР¶РµРЅРёРµ СЂРµРїРѕСЃС‚Р°"
                                 onClick={() =>
                                   setLightboxImage(post.repostOf?.image || null)
                                 }
@@ -3585,14 +3585,14 @@ export default function HomePage() {
                           <div className="relative inline-block max-w-full">
                             <img
                               src={post.image}
-                              alt="Вложение поста"
+                              alt="Р’Р»РѕР¶РµРЅРёРµ РїРѕСЃС‚Р°"
                               onClick={() => setLightboxImage(post.image || null)}
                               className="max-h-80 max-w-full cursor-zoom-in rounded-xl border border-purple-500/25 object-cover"
                             />
                             <button
                               type="button"
                               onClick={() => setLightboxImage(post.image || null)}
-                              title="Открыть полностью"
+                              title="РћС‚РєСЂС‹С‚СЊ РїРѕР»РЅРѕСЃС‚СЊСЋ"
                               className="absolute bottom-2 right-2 rounded-lg bg-[#090414]/80 p-1.5 text-white hover:bg-[#090414]"
                             >
                               <Maximize2 className="h-3.5 w-3.5" />
@@ -3638,7 +3638,7 @@ export default function HomePage() {
                               className="inline-flex items-center gap-1 rounded-xl border border-purple-500/20 bg-white/5 px-2.5 py-1.5 text-xs font-bold text-purple-200/80 hover:border-pink-400/35 hover:text-white transition"
                             >
                               <Forward className="h-3.5 w-3.5" />
-                              <span>Репост</span>
+                              <span>Р РµРїРѕСЃС‚</span>
                             </button>
                           </div>
                         </div>
@@ -3666,7 +3666,7 @@ export default function HomePage() {
                                       {cAcc ? cAcc.username : c.author}
                                     </button>
                                     <span className="text-[11px] text-purple-200/60">
-                                      {c.handle} · {c.createdAt}
+                                      {c.handle} В· {c.createdAt}
                                     </span>
                                   </div>
                                   <p className="mt-0.5 text-purple-100/90 break-words">
@@ -3696,14 +3696,14 @@ export default function HomePage() {
                                   [post.id]: e.target.value,
                                 }))
                               }
-                              placeholder="Написать комментарий..."
+                              placeholder="РќР°РїРёСЃР°С‚СЊ РєРѕРјРјРµРЅС‚Р°СЂРёР№..."
                               className="min-w-0 flex-1 rounded-xl border border-purple-500/20 bg-[#090414] px-3 py-2 text-xs text-white placeholder-purple-300/40 focus:border-[#FF2A85] focus:outline-none"
                             />
                             <button
                               type="submit"
                               className="shrink-0 rounded-xl bg-white/10 px-3 py-2 text-xs font-bold text-white hover:bg-[#FF2A85]/35 transition"
                             >
-                              Ответить
+                              РћС‚РІРµС‚РёС‚СЊ
                             </button>
                           </form>
                         </div>
@@ -3720,7 +3720,7 @@ export default function HomePage() {
               <div className="flex items-center justify-between border-b border-purple-500/15 pb-3 mb-3">
                 <div className="min-w-0">
                   <h2 className="text-sm font-black text-white truncate">
-                    Чат канала #{activeRoom.name}
+                    Р§Р°С‚ РєР°РЅР°Р»Р° #{activeRoom.name}
                   </h2>
                   <p className="text-xs text-purple-200/70 break-words">
                     {activeRoom.topic}
@@ -3732,7 +3732,7 @@ export default function HomePage() {
                 <div className="mb-3 rounded-xl border border-amber-400/35 bg-amber-950/20 px-3 py-2 flex items-center justify-between gap-2 text-xs">
                   <div className="min-w-0 break-words">
                     <span className="font-extrabold text-amber-300">
-                      Закреплено ({pinnedMessage.handle}):{" "}
+                      Р—Р°РєСЂРµРїР»РµРЅРѕ ({pinnedMessage.handle}):{" "}
                     </span>
                     <span className="text-amber-50/90">
                       {pinnedMessage.text}
@@ -3744,7 +3744,7 @@ export default function HomePage() {
                       onClick={() => handleTogglePinMessage(pinnedMessage.id)}
                       className="shrink-0 text-[11px] font-bold text-amber-200 hover:underline"
                     >
-                      Открепить
+                      РћС‚РєСЂРµРїРёС‚СЊ
                     </button>
                   )}
                 </div>
@@ -3786,8 +3786,8 @@ export default function HomePage() {
                           </button>
                           <VerifiedBadge account={senderAcc} size="sm" />
                           <span className="text-[11px] text-purple-200/60 truncate">
-                            {msg.handle} · {msg.createdAt}
-                            {msg.editedAt ? ` · ред. ${msg.editedAt}` : ""}
+                            {msg.handle} В· {msg.createdAt}
+                            {msg.editedAt ? ` В· СЂРµРґ. ${msg.editedAt}` : ""}
                           </span>
                         </div>
 
@@ -3796,7 +3796,7 @@ export default function HomePage() {
                             <button
                               type="button"
                               onClick={() => handleTogglePinMessage(msg.id)}
-                              title="Закрепить сообщение"
+                              title="Р—Р°РєСЂРµРїРёС‚СЊ СЃРѕРѕР±С‰РµРЅРёРµ"
                               className="rounded p-1 text-purple-200/60 hover:bg-white/10 hover:text-amber-300"
                             >
                               <Pin className="h-3 w-3" />
@@ -3804,7 +3804,7 @@ export default function HomePage() {
                             <button
                               type="button"
                               onClick={() => handleStartEditMessage(msg)}
-                              title="Редактировать"
+                              title="Р РµРґР°РєС‚РёСЂРѕРІР°С‚СЊ"
                               className="rounded p-1 text-purple-200/60 hover:bg-white/10 hover:text-white"
                             >
                               <Pencil className="h-3 w-3" />
@@ -3812,7 +3812,7 @@ export default function HomePage() {
                             <button
                               type="button"
                               onClick={() => handleDeleteMessage(msg.id)}
-                              title="Удалить"
+                              title="РЈРґР°Р»РёС‚СЊ"
                               className="rounded p-1 text-purple-200/60 hover:bg-rose-950/60 hover:text-rose-300"
                             >
                               <Trash2 className="h-3 w-3" />
@@ -3836,7 +3836,7 @@ export default function HomePage() {
                             onClick={() => handleSaveEditMessage(msg.id)}
                             className="shrink-0 rounded-lg bg-gradient-to-r from-[#9D4EDD] to-[#FF2A85] px-2.5 py-1.5 text-xs font-bold text-white"
                           >
-                            Сохранить
+                            РЎРѕС…СЂР°РЅРёС‚СЊ
                           </button>
                         </div>
                       ) : (
@@ -3871,7 +3871,7 @@ export default function HomePage() {
                   type="text"
                   value={chatText}
                   onChange={(e) => setChatText(e.target.value)}
-                  placeholder={`Сообщение в #${activeRoom.name}...`}
+                  placeholder={`РЎРѕРѕР±С‰РµРЅРёРµ РІ #${activeRoom.name}...`}
                   className="min-w-0 flex-1 rounded-xl border border-purple-500/25 bg-[#090414] px-3.5 py-2.5 text-sm text-white placeholder-purple-300/40 focus:border-[#FF2A85] focus:outline-none"
                 />
                 <button
@@ -3879,7 +3879,7 @@ export default function HomePage() {
                   className="inline-flex shrink-0 items-center gap-1.5 rounded-xl bg-gradient-to-r from-[#9D4EDD] to-[#FF2A85] px-3.5 sm:px-4 py-2.5 text-xs font-extrabold text-white hover:opacity-95 transition"
                 >
                   <Send className="h-3.5 w-3.5" />
-                  <span>Отправить</span>
+                  <span>РћС‚РїСЂР°РІРёС‚СЊ</span>
                 </button>
               </form>
             </div>
@@ -3889,14 +3889,14 @@ export default function HomePage() {
             <div className="space-y-4">
               <div className="rounded-2xl border border-purple-500/20 bg-[#130926]/90 p-3.5 sm:p-4 space-y-3">
                 <h2 className="text-base font-black text-white">
-                  Добавить друга по @handle
+                  Р”РѕР±Р°РІРёС‚СЊ РґСЂСѓРіР° РїРѕ @handle
                 </h2>
                 <div className="flex flex-col sm:flex-row gap-2">
                   <input
                     type="text"
                     value={friendHandleInput}
                     onChange={(e) => setFriendHandleInput(e.target.value)}
-                    placeholder="@handle пользователя"
+                    placeholder="@handle РїРѕР»СЊР·РѕРІР°С‚РµР»СЏ"
                     className="min-w-0 flex-1 rounded-xl border border-purple-500/25 bg-[#090414] px-3.5 py-2.5 text-sm text-white placeholder-purple-300/40 focus:border-[#FF2A85] focus:outline-none"
                   />
                   <button
@@ -3905,7 +3905,7 @@ export default function HomePage() {
                     className="inline-flex items-center justify-center gap-1.5 rounded-xl bg-gradient-to-r from-[#9D4EDD] to-[#FF2A85] px-4 py-2.5 text-xs font-extrabold text-white"
                   >
                     <UserPlus className="h-4 w-4" />
-                    <span>Добавить</span>
+                    <span>Р”РѕР±Р°РІРёС‚СЊ</span>
                   </button>
                 </div>
                 {friendMessage && (
@@ -3917,12 +3917,12 @@ export default function HomePage() {
 
               <div className="rounded-2xl border border-purple-500/20 bg-[#130926]/90 p-3.5 sm:p-4 space-y-3">
                 <h3 className="text-sm font-black text-white">
-                  Мои друзья ({friendsList.length})
+                  РњРѕРё РґСЂСѓР·СЊСЏ ({friendsList.length})
                 </h3>
                 {friendsList.length === 0 ? (
                   <p className="text-xs text-purple-200/70">
-                    Пока никого нет в друзьях. Добавь участника по @handle или из
-                    списка ниже.
+                    РџРѕРєР° РЅРёРєРѕРіРѕ РЅРµС‚ РІ РґСЂСѓР·СЊСЏС…. Р”РѕР±Р°РІСЊ СѓС‡Р°СЃС‚РЅРёРєР° РїРѕ @handle РёР»Рё РёР·
+                    СЃРїРёСЃРєР° РЅРёР¶Рµ.
                   </p>
                 ) : (
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
@@ -3948,14 +3948,14 @@ export default function HomePage() {
                               <VerifiedBadge account={fr} size="sm" />
                             </div>
                             <div className="text-[11px] text-purple-200/70 truncate">
-                              {fr.handle} · {fr.mood || "В сети"}
+                              {fr.handle} В· {fr.mood || "Р’ СЃРµС‚Рё"}
                             </div>
                           </div>
                         </button>
                         <button
                           type="button"
                           onClick={() => handleRemoveFriend(fr.handle)}
-                          title="Удалить из друзей"
+                          title="РЈРґР°Р»РёС‚СЊ РёР· РґСЂСѓР·РµР№"
                           className="shrink-0 rounded-lg p-1.5 text-purple-200/65 hover:bg-rose-950/60 hover:text-rose-300"
                         >
                           <UserMinus className="h-4 w-4" />
@@ -3969,7 +3969,7 @@ export default function HomePage() {
               {suggestedAccounts.length > 0 && (
                 <div className="rounded-2xl border border-purple-500/20 bg-[#130926]/90 p-3.5 sm:p-4 space-y-3">
                   <h3 className="text-sm font-black text-white">
-                    Участники орбиты
+                    РЈС‡Р°СЃС‚РЅРёРєРё РѕСЂР±РёС‚С‹
                   </h3>
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
                     {suggestedAccounts.map((acc) => (
@@ -4004,7 +4004,7 @@ export default function HomePage() {
                           className="inline-flex shrink-0 items-center gap-1 rounded-lg border border-fuchsia-500/35 bg-[#9D4EDD]/20 px-2.5 py-1.5 text-[11px] font-bold text-pink-200 hover:bg-[#9D4EDD]/35"
                         >
                           <UserPlus className="h-3.5 w-3.5" />
-                          <span>В друзья</span>
+                          <span>Р’ РґСЂСѓР·СЊСЏ</span>
                         </button>
                       </div>
                     ))}
@@ -4045,7 +4045,7 @@ export default function HomePage() {
                     className="inline-flex items-center gap-1.5 rounded-xl border border-white/20 bg-[#090414]/75 px-3 py-1.5 text-xs font-bold text-white backdrop-blur hover:bg-[#090414]"
                   >
                     <ImageIcon className="h-3.5 w-3.5 text-pink-300" />
-                    <span>Своя шапка</span>
+                    <span>РЎРІРѕСЏ С€Р°РїРєР°</span>
                   </button>
                 </div>
               </div>
@@ -4070,7 +4070,7 @@ export default function HomePage() {
                       <button
                         type="button"
                         onClick={() => avatarInputRef.current?.click()}
-                        title="Загрузить аватарку"
+                        title="Р—Р°РіСЂСѓР·РёС‚СЊ Р°РІР°С‚Р°СЂРєСѓ"
                         className="absolute -bottom-1 -right-1 rounded-full border border-white/25 bg-[#9D4EDD] p-1.5 text-white shadow hover:bg-[#FF2A85] transition"
                       >
                         <Camera className="h-3.5 w-3.5" />
@@ -4084,9 +4084,9 @@ export default function HomePage() {
                         <VerifiedBadge account={currentUser} size="md" />
                       </div>
                       <div className="text-xs text-purple-200/75 break-words">
-                        {currentUser.handle} ·{" "}
-                        {accountBadgeLabel(currentUser.accountType)} ·{" "}
-                        {formatSubscribers(currentUser.subscribers)} подписчиков
+                        {currentUser.handle} В·{" "}
+                        {accountBadgeLabel(currentUser.accountType)} В·{" "}
+                        {formatSubscribers(currentUser.subscribers)} РїРѕРґРїРёСЃС‡РёРєРѕРІ
                       </div>
                     </div>
                   </div>
@@ -4097,14 +4097,14 @@ export default function HomePage() {
                       onClick={() => setProfileAvatar(null)}
                       className="rounded-xl border border-purple-500/25 bg-white/5 px-3 py-1.5 text-xs font-bold text-purple-200/80 hover:text-white"
                     >
-                      Убрать аватарку
+                      РЈР±СЂР°С‚СЊ Р°РІР°С‚Р°СЂРєСѓ
                     </button>
                   )}
                 </div>
 
                 <div>
                   <label className="block text-xs font-bold text-purple-200/85 mb-2">
-                    Готовые градиенты шапки
+                    Р“РѕС‚РѕРІС‹Рµ РіСЂР°РґРёРµРЅС‚С‹ С€Р°РїРєРё
                   </label>
                   <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
                     {BANNER_PRESETS.map((preset) => (
@@ -4128,7 +4128,7 @@ export default function HomePage() {
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   <div>
                     <label className="block text-xs font-bold text-purple-200/85 mb-1">
-                      Отображаемое имя
+                      РћС‚РѕР±СЂР°Р¶Р°РµРјРѕРµ РёРјСЏ
                     </label>
                     <input
                       type="text"
@@ -4140,7 +4140,7 @@ export default function HomePage() {
 
                   <div>
                     <label className="block text-xs font-bold text-purple-200/85 mb-1">
-                      Статус присутствия
+                      РЎС‚Р°С‚СѓСЃ РїСЂРёСЃСѓС‚СЃС‚РІРёСЏ
                     </label>
                     <select
                       value={profilePresence}
@@ -4149,35 +4149,35 @@ export default function HomePage() {
                       }
                       className="w-full rounded-xl border border-purple-500/25 bg-[#090414] px-3.5 py-2.5 text-sm text-white focus:border-[#FF2A85] focus:outline-none"
                     >
-                      <option value="online">Онлайн</option>
-                      <option value="building">В сборке</option>
-                      <option value="orbit">На орбите</option>
+                      <option value="online">РћРЅР»Р°Р№РЅ</option>
+                      <option value="building">Р’ СЃР±РѕСЂРєРµ</option>
+                      <option value="orbit">РќР° РѕСЂР±РёС‚Рµ</option>
                     </select>
                   </div>
                 </div>
 
                 <div>
                   <label className="block text-xs font-bold text-purple-200/85 mb-1">
-                    Текущее настроение / активность
+                    РўРµРєСѓС‰РµРµ РЅР°СЃС‚СЂРѕРµРЅРёРµ / Р°РєС‚РёРІРЅРѕСЃС‚СЊ
                   </label>
                   <input
                     type="text"
                     value={profileMood}
                     onChange={(e) => setProfileMood(e.target.value)}
-                    placeholder="Например: Собираю новый релиз"
+                    placeholder="РќР°РїСЂРёРјРµСЂ: РЎРѕР±РёСЂР°СЋ РЅРѕРІС‹Р№ СЂРµР»РёР·"
                     className="w-full rounded-xl border border-purple-500/25 bg-[#090414] px-3.5 py-2.5 text-sm text-white placeholder-purple-300/40 focus:border-[#FF2A85] focus:outline-none"
                   />
                 </div>
 
                 <div>
                   <label className="block text-xs font-bold text-purple-200/85 mb-1">
-                    О себе
+                    Рћ СЃРµР±Рµ
                   </label>
                   <textarea
                     rows={3}
                     value={profileBio}
                     onChange={(e) => setProfileBio(e.target.value)}
-                    placeholder="Расскажи коротко о себе..."
+                    placeholder="Р Р°СЃСЃРєР°Р¶Рё РєРѕСЂРѕС‚РєРѕ Рѕ СЃРµР±Рµ..."
                     className="w-full rounded-xl border border-purple-500/25 bg-[#090414] px-3.5 py-2.5 text-sm text-white placeholder-purple-300/40 focus:border-[#FF2A85] focus:outline-none"
                   />
                 </div>
@@ -4185,13 +4185,13 @@ export default function HomePage() {
                 <div>
                   <label className="flex items-center gap-1.5 text-xs font-bold text-purple-200/85 mb-1">
                     <KeyRound className="h-3.5 w-3.5 text-pink-300" />
-                    <span>Новый пароль (оставь пустым, если не меняешь)</span>
+                    <span>РќРѕРІС‹Р№ РїР°СЂРѕР»СЊ (РѕСЃС‚Р°РІСЊ РїСѓСЃС‚С‹Рј, РµСЃР»Рё РЅРµ РјРµРЅСЏРµС€СЊ)</span>
                   </label>
                   <input
                     type="password"
                     value={profileNewPassword}
                     onChange={(e) => setProfileNewPassword(e.target.value)}
-                    placeholder="Новый пароль (мин. 4 символа)"
+                    placeholder="РќРѕРІС‹Р№ РїР°СЂРѕР»СЊ (РјРёРЅ. 4 СЃРёРјРІРѕР»Р°)"
                     className="w-full rounded-xl border border-purple-500/25 bg-[#090414] px-3.5 py-2.5 text-sm text-white placeholder-purple-300/40 focus:border-[#FF2A85] focus:outline-none"
                   />
                 </div>
@@ -4204,7 +4204,7 @@ export default function HomePage() {
 
                 {profileSaved && (
                   <p className="text-xs font-bold text-emerald-300">
-                    Изменения профиля сохранены!
+                    РР·РјРµРЅРµРЅРёСЏ РїСЂРѕС„РёР»СЏ СЃРѕС…СЂР°РЅРµРЅС‹!
                   </p>
                 )}
 
@@ -4214,7 +4214,7 @@ export default function HomePage() {
                     className="inline-flex items-center gap-1.5 rounded-xl bg-gradient-to-r from-[#9D4EDD] to-[#FF2A85] px-5 py-2.5 text-xs font-extrabold text-white shadow-md hover:opacity-95 transition"
                   >
                     <Save className="h-4 w-4" />
-                    <span>Сохранить профиль</span>
+                    <span>РЎРѕС…СЂР°РЅРёС‚СЊ РїСЂРѕС„РёР»СЊ</span>
                   </button>
                 </div>
               </div>
@@ -4223,7 +4223,7 @@ export default function HomePage() {
         </main>
       </div>
 
-      {/* Нижняя панель навигации для телефона */}
+      {/* РќРёР¶РЅСЏСЏ РїР°РЅРµР»СЊ РЅР°РІРёРіР°С†РёРё РґР»СЏ С‚РµР»РµС„РѕРЅР° */}
       <nav className="fixed bottom-0 inset-x-0 z-30 border-t border-purple-500/25 bg-[#090414]/95 backdrop-blur-md md:hidden">
         <div className="mx-auto grid max-w-md grid-cols-4 gap-1 px-2 py-1.5">
           <button
@@ -4235,7 +4235,7 @@ export default function HomePage() {
                 : "text-purple-200/75 hover:text-white"
             }`}
           >
-            <span>Лента</span>
+            <span>Р›РµРЅС‚Р°</span>
           </button>
           <button
             type="button"
@@ -4246,7 +4246,7 @@ export default function HomePage() {
                 : "text-purple-200/75 hover:text-white"
             }`}
           >
-            <span>Чат</span>
+            <span>Р§Р°С‚</span>
           </button>
           <button
             type="button"
@@ -4257,7 +4257,7 @@ export default function HomePage() {
                 : "text-purple-200/75 hover:text-white"
             }`}
           >
-            <span>Друзья ({friendsList.length})</span>
+            <span>Р”СЂСѓР·СЊСЏ ({friendsList.length})</span>
           </button>
           <button
             type="button"
@@ -4268,7 +4268,7 @@ export default function HomePage() {
                 : "text-purple-200/75 hover:text-white"
             }`}
           >
-            <span>Профиль</span>
+            <span>РџСЂРѕС„РёР»СЊ</span>
           </button>
         </div>
       </nav>
@@ -4278,7 +4278,7 @@ export default function HomePage() {
           <div className="w-full max-w-md max-h-[90vh] overflow-y-auto rounded-2xl border border-purple-500/30 bg-[#130926] p-5 shadow-2xl space-y-4">
             <div className="flex items-center justify-between">
               <h3 className="text-base font-black text-white">
-                Переключение или создание аккаунта
+                РџРµСЂРµРєР»СЋС‡РµРЅРёРµ РёР»Рё СЃРѕР·РґР°РЅРёРµ Р°РєРєР°СѓРЅС‚Р°
               </h3>
               <button
                 type="button"
@@ -4292,7 +4292,7 @@ export default function HomePage() {
             {otherAccounts.length > 0 && (
               <div className="space-y-1.5">
                 <div className="text-[11px] font-bold uppercase tracking-wider text-purple-200/70">
-                  Быстрый вход в существующий аккаунт
+                  Р‘С‹СЃС‚СЂС‹Р№ РІС…РѕРґ РІ СЃСѓС‰РµСЃС‚РІСѓСЋС‰РёР№ Р°РєРєР°СѓРЅС‚
                 </div>
                 <div className="max-h-36 overflow-y-auto space-y-1.5">
                   {otherAccounts.map((acc) => (
@@ -4334,7 +4334,7 @@ export default function HomePage() {
               className="space-y-2.5 border-t border-purple-500/20 pt-3"
             >
               <div className="text-[11px] font-bold uppercase tracking-wider text-purple-200/70">
-                Создать новый аккаунт
+                РЎРѕР·РґР°С‚СЊ РЅРѕРІС‹Р№ Р°РєРєР°СѓРЅС‚
               </div>
 
               {addAccError && (
@@ -4350,7 +4350,7 @@ export default function HomePage() {
                       }}
                       className="mt-1 rounded bg-[#FF2A85]/25 px-2 py-0.5 text-[11px] font-bold text-white"
                     >
-                      Подставить {addAccSuggestion}
+                      РџРѕРґСЃС‚Р°РІРёС‚СЊ {addAccSuggestion}
                     </button>
                   )}
                 </div>
@@ -4360,7 +4360,7 @@ export default function HomePage() {
                 type="text"
                 value={addAccUsername}
                 onChange={(e) => setAddAccUsername(e.target.value)}
-                placeholder="Имя"
+                placeholder="РРјСЏ"
                 className="w-full rounded-xl border border-purple-500/25 bg-[#090414] px-3 py-2.5 text-xs text-white placeholder-purple-300/40 focus:border-[#FF2A85] focus:outline-none"
               />
               <input
@@ -4382,14 +4382,14 @@ export default function HomePage() {
                   type="password"
                   value={addAccPassword}
                   onChange={(e) => setAddAccPassword(e.target.value)}
-                  placeholder="Пароль"
+                  placeholder="РџР°СЂРѕР»СЊ"
                   className="w-full rounded-xl border border-purple-500/25 bg-[#090414] px-3 py-2.5 text-xs text-white placeholder-purple-300/40 focus:border-[#FF2A85] focus:outline-none"
                 />
                 <input
                   type="password"
                   value={addAccPasswordConfirm}
                   onChange={(e) => setAddAccPasswordConfirm(e.target.value)}
-                  placeholder="Повтор пароля"
+                  placeholder="РџРѕРІС‚РѕСЂ РїР°СЂРѕР»СЏ"
                   className="w-full rounded-xl border border-purple-500/25 bg-[#090414] px-3 py-2.5 text-xs text-white placeholder-purple-300/40 focus:border-[#FF2A85] focus:outline-none"
                 />
               </div>
@@ -4399,7 +4399,7 @@ export default function HomePage() {
                 disabled={addAccSubmitting}
                 className="w-full rounded-xl bg-gradient-to-r from-[#9D4EDD] to-[#FF2A85] py-2.5 text-xs font-extrabold text-white disabled:opacity-50"
               >
-                {addAccSubmitting ? "Создаём..." : "Создать и войти"}
+                {addAccSubmitting ? "РЎРѕР·РґР°С‘Рј..." : "РЎРѕР·РґР°С‚СЊ Рё РІРѕР№С‚Рё"}
               </button>
             </form>
           </div>
@@ -4462,12 +4462,12 @@ export default function HomePage() {
                         {copiedHandle ? (
                           <>
                             <Check className="h-2.5 w-2.5 text-emerald-300" />
-                            <span>Скопировано</span>
+                            <span>РЎРєРѕРїРёСЂРѕРІР°РЅРѕ</span>
                           </>
                         ) : (
                           <>
                             <Copy className="h-2.5 w-2.5" />
-                            <span>Копировать</span>
+                            <span>РљРѕРїРёСЂРѕРІР°С‚СЊ</span>
                           </>
                         )}
                       </button>
@@ -4478,7 +4478,7 @@ export default function HomePage() {
 
               {inspectedAccount?.mood && (
                 <div className="rounded-xl border border-purple-500/20 bg-[#090414]/70 px-3 py-2 text-xs text-pink-200 break-words">
-                  Статус: {inspectedAccount.mood}
+                  РЎС‚Р°С‚СѓСЃ: {inspectedAccount.mood}
                 </div>
               )}
 
@@ -4490,11 +4490,11 @@ export default function HomePage() {
 
               <div className="space-y-2 pt-2 border-t border-purple-500/15">
                 <div className="text-xs font-extrabold text-purple-200/80">
-                  Посты участника ({inspectedPosts.length})
+                  РџРѕСЃС‚С‹ СѓС‡Р°СЃС‚РЅРёРєР° ({inspectedPosts.length})
                 </div>
                 {inspectedPosts.length === 0 ? (
                   <p className="text-xs text-purple-200/60">
-                    Пока нет опубликованных постов.
+                    РџРѕРєР° РЅРµС‚ РѕРїСѓР±Р»РёРєРѕРІР°РЅРЅС‹С… РїРѕСЃС‚РѕРІ.
                   </p>
                 ) : (
                   inspectedPosts.map((p) => (
@@ -4506,7 +4506,7 @@ export default function HomePage() {
                         {p.createdAt}
                       </div>
                       <p className="whitespace-pre-wrap break-words text-white">
-                        {p.text || "Медиапост"}
+                        {p.text || "РњРµРґРёР°РїРѕСЃС‚"}
                       </p>
                     </div>
                   ))
@@ -4524,7 +4524,7 @@ export default function HomePage() {
         >
           <img
             src={lightboxImage}
-            alt="Просмотр изображения"
+            alt="РџСЂРѕСЃРјРѕС‚СЂ РёР·РѕР±СЂР°Р¶РµРЅРёСЏ"
             onClick={(e) => e.stopPropagation()}
             className="max-h-[90vh] max-w-[92vw] rounded-2xl border border-purple-500/30 object-contain"
           />
@@ -4533,3 +4533,4 @@ export default function HomePage() {
     </div>
   );
 }
+
