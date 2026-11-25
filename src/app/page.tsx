@@ -3419,15 +3419,11 @@ export default function HomePage() {
                         {hasEgg && (
                           <PostCornerPeelHandle
                             pullValue={pullValue}
-                            onPullChange={(valOrUpdater) =>
-                              setPeelPulls((prev) => {
-                                const current = prev[post.id] || 0;
-                                const next =
-                                  typeof valOrUpdater === "function"
-                                    ? valOrUpdater(current)
-                                    : valOrUpdater;
-                                return { ...prev, [post.id]: next };
-                              })
+                            onPullChange={(nextVal: number) =>
+                              setPeelPulls((prev) => ({
+                                ...prev,
+                                [post.id]: typeof nextVal === "number" ? nextVal : 0,
+                              }))
                             }
                           />
                         )}
