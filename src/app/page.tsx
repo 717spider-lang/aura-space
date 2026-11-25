@@ -6,6 +6,8 @@ import {
   BadgeCheck,
   Camera,
   Check,
+  ChevronDown,
+  ChevronUp,
   Copy,
   Edit3,
   Forward,
@@ -884,7 +886,7 @@ function ReactionBar({
                 ? `${emoji}: ${users.join(", ")}`
                 : `Поставить ${emoji}`
             }
-            className={`inline-flex items-center gap-1 rounded-lg border px-2 py-0.5 text-xs font-bold transition ${
+            className={`inline-flex items-center gap-1 rounded-lg border px-2 py-1 text-xs font-bold transition ${
               reacted
                 ? "border-pink-400/55 bg-[#FF2A85]/25 text-white"
                 : users.length > 0
@@ -935,6 +937,7 @@ export default function HomePage() {
   const [newChannelTopic, setNewChannelTopic] = useState("");
   const [channelError, setChannelError] = useState<string | null>(null);
   const [showChannelForm, setShowChannelForm] = useState(false);
+  const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
 
   const [activeRoomId, setActiveRoomId] = useState<string>("general");
   const [activeTab, setActiveTab] = useState<
@@ -1003,8 +1006,8 @@ export default function HomePage() {
   const syncChannelRef = useRef<BroadcastChannel | null>(null);
   const remoteSyncLockRef = useRef(false);
   const localStreamRef = useRef<MediaStream | null>(null);
-  const peerConnectionsRef = useRef<Map<string, RTCPeerConnection>>(new Map());
-  const remoteAudioElsRef = useRef<Map<string, HTMLAudioElement>>(new Map());
+  const peerConnectionsRef = useRef>(new Map());
+  const remoteAudioElsRef = useRef>(new Map());
   const audioContextRef = useRef<AudioContext | null>(null);
   const analyserRef = useRef<AnalyserNode | null>(null);
   const meterRafRef = useRef<number | null>(null);
@@ -2596,7 +2599,7 @@ export default function HomePage() {
 
   if (!hydrated) {
     return (
-      <div className="min-h-screen bg-[#090414] text-[#F8F5FF] flex items-center justify-center">
+      <div className="min-h-screen overflow-x-hidden bg-[#090414] text-[#F8F5FF] flex items-center justify-center p-4">
         <div className="text-sm font-bold tracking-wider text-purple-200/80">
           Загрузка Aura Space...
         </div>
@@ -2606,10 +2609,13 @@ export default function HomePage() {
 
   if (!currentUser) {
     return (
-      <div className="min-h-screen bg-[#090414] text-[#F8F5FF] flex items-center justify-center p-4">
-        <div className="w-full max-w-md rounded-2xl border border-purple-500/25 bg-[#130926]/95 p-6 shadow-2xl">
+      <div className="min-h-screen overflow-x-hidden bg-[#090414] text-[#F8F5FF] flex items-center justify-center p-4">
+        <div className="w-full max-w-md rounded-2xl border border-purple-500/25 bg-[#130926]/95 p-5 sm:p-6 shadow-2xl">
           <div className="flex flex-col items-center text-center mb-5">
-            <SaturnMascot state={SATURN_DEFAULT}  onRevive={() => setSaturnState(SATURN_DEFAULT)} />
+            <SaturnMascot
+              state={SATURN_DEFAULT}
+              onRevive={() => setSaturnState(SATURN_DEFAULT)}
+            />
             <h1 className="mt-2 text-2xl font-black tracking-tight text-white">
               Aura Space
             </h1>
@@ -2626,7 +2632,7 @@ export default function HomePage() {
                 setAuthError(null);
                 setAuthSuggestion(null);
               }}
-              className={`rounded-lg py-2 text-xs font-extrabold transition ${
+              className={`rounded-lg py-2.5 text-xs font-extrabold transition ${
                 authMode === "login"
                   ? "bg-gradient-to-r from-[#9D4EDD] to-[#FF2A85] text-white"
                   : "text-purple-200/75 hover:text-white"
@@ -2641,7 +2647,7 @@ export default function HomePage() {
                 setAuthError(null);
                 setAuthSuggestion(null);
               }}
-              className={`rounded-lg py-2 text-xs font-extrabold transition ${
+              className={`rounded-lg py-2.5 text-xs font-extrabold transition ${
                 authMode === "register"
                   ? "bg-gradient-to-r from-[#9D4EDD] to-[#FF2A85] text-white"
                   : "text-purple-200/75 hover:text-white"
@@ -2703,7 +2709,7 @@ export default function HomePage() {
               <button
                 type="submit"
                 disabled={authSubmitting}
-                className="w-full rounded-xl bg-gradient-to-r from-[#9D4EDD] to-[#FF2A85] py-2.5 text-sm font-extrabold text-white shadow-lg hover:opacity-95 disabled:opacity-50 transition"
+                className="w-full rounded-xl bg-gradient-to-r from-[#9D4EDD] to-[#FF2A85] py-3 text-sm font-extrabold text-white shadow-lg hover:opacity-95 disabled:opacity-50 transition"
               >
                 {authSubmitting ? "Входим..." : "Войти в Aura Space"}
               </button>
@@ -2719,7 +2725,7 @@ export default function HomePage() {
                   value={regUsername}
                   onChange={(e) => setRegUsername(e.target.value)}
                   placeholder="Как тебя называть"
-                  className="w-full rounded-xl border border-purple-500/25 bg-[#090414] px-3.5 py-2 text-sm text-white placeholder-purple-300/40 focus:border-[#FF2A85] focus:outline-none"
+                  className="w-full rounded-xl border border-purple-500/25 bg-[#090414] px-3.5 py-2.5 text-sm text-white placeholder-purple-300/40 focus:border-[#FF2A85] focus:outline-none"
                 />
               </div>
 
@@ -2732,7 +2738,7 @@ export default function HomePage() {
                   value={regHandle}
                   onChange={(e) => setRegHandle(e.target.value)}
                   placeholder="@your_handle"
-                  className="w-full rounded-xl border border-purple-500/25 bg-[#090414] px-3.5 py-2 text-sm text-white placeholder-purple-300/40 focus:border-[#FF2A85] focus:outline-none"
+                  className="w-full rounded-xl border border-purple-500/25 bg-[#090414] px-3.5 py-2.5 text-sm text-white placeholder-purple-300/40 focus:border-[#FF2A85] focus:outline-none"
                 />
               </div>
 
@@ -2749,11 +2755,11 @@ export default function HomePage() {
                   }}
                   placeholder="you@gmail.com"
                   autoComplete="email"
-                  className="w-full rounded-xl border border-purple-500/25 bg-[#090414] px-3.5 py-2 text-sm text-white placeholder-purple-300/40 focus:border-[#FF2A85] focus:outline-none"
+                  className="w-full rounded-xl border border-purple-500/25 bg-[#090414] px-3.5 py-2.5 text-sm text-white placeholder-purple-300/40 focus:border-[#FF2A85] focus:outline-none"
                 />
               </div>
 
-              <div className="grid grid-cols-2 gap-2.5">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
                 <div>
                   <label className="block text-xs font-bold text-purple-200/85 mb-1">
                     Пароль
@@ -2764,7 +2770,7 @@ export default function HomePage() {
                     onChange={(e) => setRegPassword(e.target.value)}
                     placeholder="Мин. 4 симв."
                     autoComplete="new-password"
-                    className="w-full rounded-xl border border-purple-500/25 bg-[#090414] px-3 py-2 text-sm text-white placeholder-purple-300/40 focus:border-[#FF2A85] focus:outline-none"
+                    className="w-full rounded-xl border border-purple-500/25 bg-[#090414] px-3 py-2.5 text-sm text-white placeholder-purple-300/40 focus:border-[#FF2A85] focus:outline-none"
                   />
                 </div>
                 <div>
@@ -2777,7 +2783,7 @@ export default function HomePage() {
                     onChange={(e) => setRegPasswordConfirm(e.target.value)}
                     placeholder="Повтори пароль"
                     autoComplete="new-password"
-                    className="w-full rounded-xl border border-purple-500/25 bg-[#090414] px-3 py-2 text-sm text-white placeholder-purple-300/40 focus:border-[#FF2A85] focus:outline-none"
+                    className="w-full rounded-xl border border-purple-500/25 bg-[#090414] px-3 py-2.5 text-sm text-white placeholder-purple-300/40 focus:border-[#FF2A85] focus:outline-none"
                   />
                 </div>
               </div>
@@ -2785,7 +2791,7 @@ export default function HomePage() {
               <button
                 type="submit"
                 disabled={authSubmitting}
-                className="w-full rounded-xl bg-gradient-to-r from-[#9D4EDD] to-[#FF2A85] py-2.5 text-sm font-extrabold text-white shadow-lg hover:opacity-95 disabled:opacity-50 transition mt-1"
+                className="w-full rounded-xl bg-gradient-to-r from-[#9D4EDD] to-[#FF2A85] py-3 text-sm font-extrabold text-white shadow-lg hover:opacity-95 disabled:opacity-50 transition mt-1"
               >
                 {authSubmitting ? "Создаём..." : "Создать аккаунт"}
               </button>
@@ -2797,31 +2803,36 @@ export default function HomePage() {
   }
 
   return (
-    <div className="min-h-screen bg-[#090414] text-[#F8F5FF] flex flex-col">
-      <header className="sticky top-0 z-30 border-b border-purple-500/20 bg-[#090414]/90 backdrop-blur-md">
-        <div className="mx-auto flex max-w-7xl items-center justify-between gap-3 px-4 py-2.5">
-          <div className="flex items-center gap-3 min-w-0">
-            <SaturnMascot state={currentUser.saturnState || SATURN_DEFAULT} onRevive={() => setSaturnState(SATURN_DEFAULT)} />
+    <div className="min-h-screen overflow-x-hidden bg-[#090414] text-[#F8F5FF] flex flex-col pb-24 md:pb-6">
+      <header className="sticky top-0 z-30 border-b border-purple-500/20 bg-[#090414]/92 backdrop-blur-md">
+        <div className="mx-auto flex max-w-7xl items-center justify-between gap-2 px-3 py-2 sm:px-4 sm:py-2.5">
+          <div className="flex items-center gap-2 sm:gap-3 min-w-0">
+            <div className="shrink-0">
+              <SaturnMascot
+                state={currentUser.saturnState || SATURN_DEFAULT}
+                onRevive={() => setSaturnState(SATURN_DEFAULT)}
+              />
+            </div>
             <div className="min-w-0">
-              <div className="flex items-center gap-2">
-                <span className="text-base font-black tracking-tight text-white">
+              <div className="flex items-center gap-1.5 min-w-0">
+                <span className="truncate text-sm sm:text-base font-black tracking-tight text-white">
                   Aura Space
                 </span>
-                <span className="rounded-full border border-fuchsia-500/30 bg-[#9D4EDD]/15 px-2 py-0.5 text-[10px] font-bold text-pink-200">
+                <span className="shrink-0 rounded-full border border-fuchsia-500/30 bg-[#9D4EDD]/15 px-2 py-0.5 text-[10px] font-bold text-pink-200">
                   #{activeRoom.name}
                 </span>
               </div>
-              <p className="truncate text-[11px] text-purple-200/70">
+              <p className="hidden sm:block truncate text-[11px] text-purple-200/70">
                 {activeRoom.topic}
               </p>
             </div>
           </div>
 
-          <nav className="flex items-center gap-1.5">
+          <nav className="hidden md:flex items-center gap-1.5 shrink-0">
             <button
               type="button"
               onClick={() => setActiveTab("feed")}
-              className={`rounded-xl px-3 py-1.5 text-xs font-extrabold transition ${
+              className={`rounded-xl px-3 py-1.5 text-xs font-extrabold transition whitespace-nowrap ${
                 activeTab === "feed"
                   ? "bg-gradient-to-r from-[#9D4EDD] to-[#FF2A85] text-white"
                   : "bg-white/5 text-purple-200/80 hover:bg-white/10 hover:text-white"
@@ -2832,7 +2843,7 @@ export default function HomePage() {
             <button
               type="button"
               onClick={() => setActiveTab("chat")}
-              className={`rounded-xl px-3 py-1.5 text-xs font-extrabold transition ${
+              className={`rounded-xl px-3 py-1.5 text-xs font-extrabold transition whitespace-nowrap ${
                 activeTab === "chat"
                   ? "bg-gradient-to-r from-[#9D4EDD] to-[#FF2A85] text-white"
                   : "bg-white/5 text-purple-200/80 hover:bg-white/10 hover:text-white"
@@ -2843,7 +2854,7 @@ export default function HomePage() {
             <button
               type="button"
               onClick={() => setActiveTab("friends")}
-              className={`inline-flex items-center gap-1.5 rounded-xl px-3 py-1.5 text-xs font-extrabold transition ${
+              className={`inline-flex items-center gap-1.5 rounded-xl px-3 py-1.5 text-xs font-extrabold transition whitespace-nowrap ${
                 activeTab === "friends"
                   ? "bg-gradient-to-r from-[#9D4EDD] to-[#FF2A85] text-white"
                   : "bg-white/5 text-purple-200/80 hover:bg-white/10 hover:text-white"
@@ -2855,7 +2866,7 @@ export default function HomePage() {
             <button
               type="button"
               onClick={() => setActiveTab("profile")}
-              className={`rounded-xl px-3 py-1.5 text-xs font-extrabold transition ${
+              className={`rounded-xl px-3 py-1.5 text-xs font-extrabold transition whitespace-nowrap ${
                 activeTab === "profile"
                   ? "bg-gradient-to-r from-[#9D4EDD] to-[#FF2A85] text-white"
                   : "bg-white/5 text-purple-200/80 hover:bg-white/10 hover:text-white"
@@ -2865,11 +2876,11 @@ export default function HomePage() {
             </button>
           </nav>
 
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
             <button
               type="button"
               onClick={() => handleOpenProfile(currentUser.handle)}
-              className="hidden sm:flex items-center gap-2 rounded-xl border border-purple-500/20 bg-[#130926] px-2.5 py-1.5 text-left hover:border-pink-400/40 transition"
+              className="hidden xl:flex items-center gap-2 rounded-xl border border-purple-500/20 bg-[#130926] px-2.5 py-1.5 text-left hover:border-pink-400/40 transition"
             >
               <AvatarBadge
                 name={currentUser.username}
@@ -2895,28 +2906,69 @@ export default function HomePage() {
                 setAddAccSuggestion(null);
                 setShowAddAccountModal(true);
               }}
-              title="Добавить или создать ещё один аккаунт"
-              className="inline-flex items-center gap-1 rounded-xl border border-purple-500/25 bg-white/5 px-2.5 py-2 text-xs font-bold text-purple-100 hover:border-pink-400/40 hover:bg-white/10 transition"
+              title="Добавить или переключить аккаунт"
+              className="inline-flex items-center gap-1 rounded-xl border border-purple-500/25 bg-white/5 px-2.5 py-2 text-xs font-bold text-purple-100 hover:border-pink-400/40 hover:bg-white/10 transition whitespace-nowrap"
             >
               <UserPlus className="h-3.5 w-3.5 text-pink-300" />
-              <span className="hidden md:inline">Аккаунт</span>
+              <span className="hidden sm:inline">Аккаунт</span>
             </button>
 
             <button
               type="button"
               onClick={handleLogout}
               title="Выйти из аккаунта"
-              className="inline-flex items-center gap-1 rounded-xl border border-purple-500/25 bg-white/5 px-2.5 py-2 text-xs font-bold text-purple-200/80 hover:border-pink-500/40 hover:text-white transition"
+              className="inline-flex items-center gap-1 rounded-xl border border-purple-500/25 bg-white/5 px-2.5 py-2 text-xs font-bold text-purple-200/80 hover:border-pink-500/40 hover:text-white transition whitespace-nowrap"
             >
               <LogOut className="h-3.5 w-3.5" />
-              <span className="hidden md:inline">Выйти</span>
+              <span className="hidden sm:inline">Выйти</span>
             </button>
           </div>
         </div>
+
+        {/* Быстрая полоса каналов на телефонах и планшетах */}
+        <div className="flex lg:hidden items-center justify-between gap-2 border-t border-purple-500/15 bg-[#090414]/95 px-3 py-2">
+          <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar min-w-0 flex-1">
+            {rooms.map((room) => {
+              const active = room.id === activeRoom.id;
+              return (
+                <button
+                  key={room.id}
+                  type="button"
+                  onClick={() => handleSwitchRoom(room.id)}
+                  className={`inline-flex shrink-0 items-center gap-1 rounded-lg px-2.5 py-1.5 text-xs font-bold transition ${
+                    active
+                      ? "bg-gradient-to-r from-[#9D4EDD] to-[#FF2A85] text-white"
+                      : "bg-white/5 text-purple-200/80 hover:bg-white/10 hover:text-white"
+                  }`}
+                >
+                  <Hash className="h-3 w-3" />
+                  <span>{room.name}</span>
+                </button>
+              );
+            })}
+          </div>
+
+          <button
+            type="button"
+            onClick={() => setMobileSidebarOpen((v) => !v)}
+            className="inline-flex shrink-0 items-center gap-1 rounded-lg border border-purple-500/25 bg-white/5 px-2.5 py-1.5 text-xs font-bold text-pink-200"
+          >
+            <span>{inCall ? "Голос" : "Меню"}</span>
+            {mobileSidebarOpen ? (
+              <ChevronUp className="h-3.5 w-3.5" />
+            ) : (
+              <ChevronDown className="h-3.5 w-3.5" />
+            )}
+          </button>
+        </div>
       </header>
 
-      <div className="mx-auto grid w-full max-w-7xl flex-1 grid-cols-1 gap-5 px-4 py-5 lg:grid-cols-12">
-        <aside className="space-y-4 lg:col-span-3">
+      <div className="mx-auto grid w-full max-w-7xl flex-1 grid-cols-1 gap-4 px-3 py-4 sm:px-4 sm:py-5 lg:grid-cols-12 lg:gap-5">
+        <aside
+          className={`space-y-4 lg:col-span-3 min-w-0 ${
+            mobileSidebarOpen ? "block" : "hidden lg:block"
+          }`}
+        >
           <div className="rounded-2xl border border-purple-500/20 bg-[#130926]/90 p-3.5">
             <div className="flex items-center justify-between mb-2.5">
               <span className="text-[11px] font-extrabold uppercase tracking-wider text-purple-200/70">
@@ -2946,14 +2998,14 @@ export default function HomePage() {
                   value={newChannelName}
                   onChange={(e) => setNewChannelName(e.target.value)}
                   placeholder="название-канала"
-                  className="w-full rounded-lg border border-purple-500/25 bg-[#130926] px-2.5 py-1.5 text-xs text-white placeholder-purple-300/40 focus:border-[#FF2A85] focus:outline-none"
+                  className="w-full rounded-lg border border-purple-500/25 bg-[#130926] px-2.5 py-2 text-xs text-white placeholder-purple-300/40 focus:border-[#FF2A85] focus:outline-none"
                 />
                 <input
                   type="text"
                   value={newChannelTopic}
                   onChange={(e) => setNewChannelTopic(e.target.value)}
                   placeholder="Тема канала (необязательно)"
-                  className="w-full rounded-lg border border-purple-500/25 bg-[#130926] px-2.5 py-1.5 text-xs text-white placeholder-purple-300/40 focus:border-[#FF2A85] focus:outline-none"
+                  className="w-full rounded-lg border border-purple-500/25 bg-[#130926] px-2.5 py-2 text-xs text-white placeholder-purple-300/40 focus:border-[#FF2A85] focus:outline-none"
                 />
                 {channelError && (
                   <p className="text-[11px] font-semibold text-pink-300">
@@ -2967,13 +3019,13 @@ export default function HomePage() {
                       setShowChannelForm(false);
                       setChannelError(null);
                     }}
-                    className="rounded-lg px-2 py-1 text-[11px] font-bold text-purple-200/70 hover:text-white"
+                    className="rounded-lg px-2.5 py-1.5 text-[11px] font-bold text-purple-200/70 hover:text-white"
                   >
                     Отмена
                   </button>
                   <button
                     type="submit"
-                    className="rounded-lg bg-gradient-to-r from-[#9D4EDD] to-[#FF2A85] px-2.5 py-1 text-[11px] font-extrabold text-white"
+                    className="rounded-lg bg-gradient-to-r from-[#9D4EDD] to-[#FF2A85] px-3 py-1.5 text-[11px] font-extrabold text-white"
                   >
                     Создать
                   </button>
@@ -2988,8 +3040,11 @@ export default function HomePage() {
                   <button
                     key={room.id}
                     type="button"
-                    onClick={() => handleSwitchRoom(room.id)}
-                    className={`flex w-full items-center justify-between rounded-xl px-3 py-2 text-left text-xs font-bold transition ${
+                    onClick={() => {
+                      handleSwitchRoom(room.id);
+                      setMobileSidebarOpen(false);
+                    }}
+                    className={`flex w-full items-center justify-between rounded-xl px-3 py-2.5 text-left text-xs font-bold transition ${
                       active
                         ? "bg-gradient-to-r from-[#9D4EDD]/30 to-[#FF2A85]/25 text-white border border-pink-400/35"
                         : "text-purple-200/75 hover:bg-white/5 hover:text-white border border-transparent"
@@ -3146,7 +3201,10 @@ export default function HomePage() {
                   <button
                     key={acc.id}
                     type="button"
-                    onClick={() => handleOpenProfile(acc.handle)}
+                    onClick={() => {
+                      handleOpenProfile(acc.handle);
+                      setMobileSidebarOpen(false);
+                    }}
                     className="flex w-full items-center justify-between gap-2 rounded-xl bg-[#090414]/65 px-2.5 py-2 text-left hover:bg-white/5 transition"
                   >
                     <div className="flex items-center gap-2 min-w-0">
@@ -3178,25 +3236,25 @@ export default function HomePage() {
           </div>
         </aside>
 
-        <main className="space-y-4 lg:col-span-9">
+        <main className="space-y-4 lg:col-span-9 min-w-0">
           {activeTab === "feed" && (
             <>
               <form
                 onSubmit={handleCreatePost}
-                className="rounded-2xl border border-purple-500/20 bg-[#130926]/90 p-4 space-y-3"
+                className="rounded-2xl border border-purple-500/20 bg-[#130926]/90 p-3.5 sm:p-4 space-y-3"
               >
-                <div className="flex items-start gap-3">
+                <div className="flex items-start gap-2.5 sm:gap-3">
                   <AvatarBadge
                     name={currentUser.username}
                     src={currentUser.avatar}
                     size="md"
                     presence={currentUser.presence}
                   />
-                  <div className="flex-1 space-y-2.5">
+                  <div className="flex-1 min-w-0 space-y-2.5">
                     {repostTarget ? (
                       <div className="space-y-2">
-                        <div className="flex items-center justify-between rounded-xl border border-fuchsia-500/30 bg-[#090414]/80 px-3 py-2 text-xs">
-                          <span className="font-bold text-pink-200">
+                        <div className="flex items-center justify-between gap-2 rounded-xl border border-fuchsia-500/30 bg-[#090414]/80 px-3 py-2 text-xs">
+                          <span className="font-bold text-pink-200 truncate">
                             Репост поста от {repostTarget.handle}
                           </span>
                           <button
@@ -3205,7 +3263,7 @@ export default function HomePage() {
                               setRepostTarget(null);
                               setRepostNote("");
                             }}
-                            className="text-purple-200/70 hover:text-white"
+                            className="shrink-0 text-purple-200/70 hover:text-white"
                           >
                             <X className="h-3.5 w-3.5" />
                           </button>
@@ -3215,10 +3273,10 @@ export default function HomePage() {
                           value={repostNote}
                           onChange={(e) => setRepostNote(e.target.value)}
                           placeholder="Добавь свой комментарий к репосту (необязательно)..."
-                          className="w-full rounded-xl border border-purple-500/25 bg-[#090414] px-3.5 py-2 text-sm text-white placeholder-purple-300/40 focus:border-[#FF2A85] focus:outline-none"
+                          className="w-full rounded-xl border border-purple-500/25 bg-[#090414] px-3.5 py-2.5 text-sm text-white placeholder-purple-300/40 focus:border-[#FF2A85] focus:outline-none"
                         />
                         <div className="rounded-xl border border-purple-500/20 bg-[#090414]/60 p-3 text-xs text-purple-100/90">
-                          <div className="font-bold text-pink-200 mb-1">
+                          <div className="font-bold text-pink-200 mb-1 break-words">
                             {repostTarget.author} · {repostTarget.handle}
                           </div>
                           <p className="whitespace-pre-wrap break-words">
@@ -3231,17 +3289,17 @@ export default function HomePage() {
                         rows={3}
                         value={postText}
                         onChange={(e) => setPostText(e.target.value)}
-                        placeholder={`Что нового в #${activeRoom.name}? Используй @handle для упоминаний...`}
+                        placeholder={`Что нового в #${activeRoom.name}? Используй @handle...`}
                         className="w-full resize-none rounded-xl border border-purple-500/25 bg-[#090414] px-3.5 py-2.5 text-sm text-white placeholder-purple-300/40 focus:border-[#FF2A85] focus:outline-none"
                       />
                     )}
 
                     {postImage && !repostTarget && (
-                      <div className="relative inline-block">
+                      <div className="relative inline-block max-w-full">
                         <img
                           src={postImage}
                           alt="Предпросмотр"
-                          className="max-h-56 rounded-xl border border-purple-500/25 object-cover"
+                          className="max-h-56 max-w-full rounded-xl border border-purple-500/25 object-cover"
                         />
                         <button
                           type="button"
@@ -3251,7 +3309,7 @@ export default function HomePage() {
                               postImageInputRef.current.value = "";
                             }
                           }}
-                          className="absolute top-2 right-2 rounded-full bg-[#090414]/85 p-1 text-white hover:bg-rose-600 transition"
+                          className="absolute top-2 right-2 rounded-full bg-[#090414]/85 p-1.5 text-white hover:bg-rose-600 transition"
                         >
                           <X className="h-3.5 w-3.5" />
                         </button>
@@ -3278,7 +3336,7 @@ export default function HomePage() {
                             <button
                               type="button"
                               onClick={() => postImageInputRef.current?.click()}
-                              className="inline-flex items-center gap-1.5 rounded-xl border border-purple-500/25 bg-white/5 px-3 py-1.5 text-xs font-bold text-purple-100 hover:border-pink-400/40 hover:bg-white/10 transition"
+                              className="inline-flex items-center gap-1.5 rounded-xl border border-purple-500/25 bg-white/5 px-3 py-2 text-xs font-bold text-purple-100 hover:border-pink-400/40 hover:bg-white/10 transition"
                             >
                               <ImagePlus className="h-3.5 w-3.5 text-pink-300" />
                               <span>Фото</span>
@@ -3289,7 +3347,7 @@ export default function HomePage() {
 
                       <button
                         type="submit"
-                        className="inline-flex items-center gap-1.5 rounded-xl bg-gradient-to-r from-[#9D4EDD] to-[#FF2A85] px-4 py-2 text-xs font-extrabold text-white shadow-md hover:opacity-95 transition"
+                        className="inline-flex items-center gap-1.5 rounded-xl bg-gradient-to-r from-[#9D4EDD] to-[#FF2A85] px-4 py-2.5 text-xs font-extrabold text-white shadow-md hover:opacity-95 transition"
                       >
                         <Send className="h-3.5 w-3.5" />
                         <span>{repostTarget ? "Сделать репост" : "Опубликовать"}</span>
@@ -3300,13 +3358,15 @@ export default function HomePage() {
               </form>
 
               {pinnedPost && (
-                <div className="rounded-2xl border border-amber-400/35 bg-amber-950/20 px-4 py-3 flex items-start justify-between gap-3">
+                <div className="rounded-2xl border border-amber-400/35 bg-amber-950/20 px-3.5 py-3 flex items-start justify-between gap-3">
                   <div className="min-w-0">
                     <div className="flex items-center gap-1.5 text-[11px] font-extrabold uppercase tracking-wider text-amber-300">
-                      <Pin className="h-3.5 w-3.5" />
-                      <span>Закреплённый пост · {pinnedPost.handle}</span>
+                      <Pin className="h-3.5 w-3.5 shrink-0" />
+                      <span className="truncate">
+                        Закреплённый пост · {pinnedPost.handle}
+                      </span>
                     </div>
-                    <p className="mt-1 text-xs text-amber-50/95 line-clamp-2">
+                    <p className="mt-1 text-xs text-amber-50/95 line-clamp-2 break-words">
                       {pinnedPost.text || "Медиапост"}
                     </p>
                   </div>
@@ -3314,7 +3374,7 @@ export default function HomePage() {
                     <button
                       type="button"
                       onClick={() => handleTogglePinPost(pinnedPost.id)}
-                      className="shrink-0 rounded-lg border border-amber-400/30 bg-amber-950/50 px-2.5 py-1 text-[11px] font-bold text-amber-200 hover:bg-amber-900/50"
+                      className="shrink-0 rounded-lg border border-amber-400/30 bg-amber-950/50 px-2.5 py-1.5 text-[11px] font-bold text-amber-200 hover:bg-amber-900/50"
                     >
                       Открепить
                     </button>
@@ -3343,7 +3403,7 @@ export default function HomePage() {
                     return (
                       <article
                         key={post.id}
-                        className="relative overflow-hidden rounded-2xl border border-purple-500/20 bg-[#130926]/90 p-4 space-y-3"
+                        className="relative overflow-hidden rounded-2xl border border-purple-500/20 bg-[#130926]/90 p-3.5 sm:p-4 space-y-3"
                       >
                         {hasEgg && (
                           <PostPeelUnderlay
@@ -3399,7 +3459,7 @@ export default function HomePage() {
                                 <button
                                   type="button"
                                   onClick={() => handleOpenProfile(post.handle)}
-                                  className="text-xs font-semibold text-purple-200/70 hover:text-pink-200"
+                                  className="text-xs font-semibold text-purple-200/70 hover:text-pink-200 truncate"
                                 >
                                   {post.handle}
                                 </button>
@@ -3417,7 +3477,7 @@ export default function HomePage() {
                             </div>
                           </div>
 
-                          <div className="flex items-center gap-1">
+                          <div className="flex items-center gap-1 shrink-0">
                             {canManage && (
                               <>
                                 <button
@@ -3470,14 +3530,14 @@ export default function HomePage() {
                                   setEditingPostId(null);
                                   setEditingPostText("");
                                 }}
-                                className="rounded-lg px-3 py-1 text-xs font-bold text-purple-200/75 hover:text-white"
+                                className="rounded-lg px-3 py-1.5 text-xs font-bold text-purple-200/75 hover:text-white"
                               >
                                 Отмена
                               </button>
                               <button
                                 type="button"
                                 onClick={() => handleSaveEditPost(post.id)}
-                                className="rounded-lg bg-gradient-to-r from-[#9D4EDD] to-[#FF2A85] px-3 py-1 text-xs font-extrabold text-white"
+                                className="rounded-lg bg-gradient-to-r from-[#9D4EDD] to-[#FF2A85] px-3 py-1.5 text-xs font-extrabold text-white"
                               >
                                 Сохранить
                               </button>
@@ -3498,9 +3558,9 @@ export default function HomePage() {
 
                         {post.repostOf && (
                           <div className="rounded-xl border border-purple-500/25 bg-[#090414]/75 p-3 space-y-1.5">
-                            <div className="flex items-center gap-1.5 text-xs font-bold text-pink-200">
-                              <Repeat className="h-3.5 w-3.5 text-fuchsia-400" />
-                              <span>
+                            <div className="flex flex-wrap items-center gap-1.5 text-xs font-bold text-pink-200">
+                              <Repeat className="h-3.5 w-3.5 shrink-0 text-fuchsia-400" />
+                              <span className="truncate">
                                 {post.repostOf.author} ({post.repostOf.handle})
                               </span>
                               <span className="text-[11px] font-normal text-purple-200/60">
@@ -3519,19 +3579,19 @@ export default function HomePage() {
                                 onClick={() =>
                                   setLightboxImage(post.repostOf?.image || null)
                                 }
-                                className="max-h-52 cursor-zoom-in rounded-lg border border-purple-500/20 object-cover"
+                                className="max-h-52 max-w-full cursor-zoom-in rounded-lg border border-purple-500/20 object-cover"
                               />
                             )}
                           </div>
                         )}
 
                         {post.image && (
-                          <div className="relative inline-block">
+                          <div className="relative inline-block max-w-full">
                             <img
                               src={post.image}
                               alt="Вложение поста"
                               onClick={() => setLightboxImage(post.image || null)}
-                              className="max-h-80 cursor-zoom-in rounded-xl border border-purple-500/25 object-cover"
+                              className="max-h-80 max-w-full cursor-zoom-in rounded-xl border border-purple-500/25 object-cover"
                             />
                             <button
                               type="button"
@@ -3557,7 +3617,7 @@ export default function HomePage() {
                             <button
                               type="button"
                               onClick={() => handleToggleLike(post.id)}
-                              className={`inline-flex items-center gap-1 rounded-xl border px-2.5 py-1 text-xs font-bold transition ${
+                              className={`inline-flex items-center gap-1 rounded-xl border px-2.5 py-1.5 text-xs font-bold transition ${
                                 post.likedByMe
                                   ? "border-pink-400/50 bg-[#FF2A85]/25 text-pink-200"
                                   : "border-purple-500/20 bg-white/5 text-purple-200/80 hover:border-pink-400/35 hover:text-white"
@@ -3579,7 +3639,7 @@ export default function HomePage() {
                                 setRepostTarget(post);
                                 setRepostNote("");
                               }}
-                              className="inline-flex items-center gap-1 rounded-xl border border-purple-500/20 bg-white/5 px-2.5 py-1 text-xs font-bold text-purple-200/80 hover:border-pink-400/35 hover:text-white transition"
+                              className="inline-flex items-center gap-1 rounded-xl border border-purple-500/20 bg-white/5 px-2.5 py-1.5 text-xs font-bold text-purple-200/80 hover:border-pink-400/35 hover:text-white transition"
                             >
                               <Forward className="h-3.5 w-3.5" />
                               <span>Репост</span>
@@ -3601,7 +3661,7 @@ export default function HomePage() {
                                   size="sm"
                                 />
                                 <div className="min-w-0 flex-1">
-                                  <div className="flex items-center gap-1.5">
+                                  <div className="flex flex-wrap items-center gap-1.5">
                                     <button
                                       type="button"
                                       onClick={() => handleOpenProfile(c.handle)}
@@ -3641,11 +3701,11 @@ export default function HomePage() {
                                 }))
                               }
                               placeholder="Написать комментарий..."
-                              className="flex-1 rounded-xl border border-purple-500/20 bg-[#090414] px-3 py-1.5 text-xs text-white placeholder-purple-300/40 focus:border-[#FF2A85] focus:outline-none"
+                              className="min-w-0 flex-1 rounded-xl border border-purple-500/20 bg-[#090414] px-3 py-2 text-xs text-white placeholder-purple-300/40 focus:border-[#FF2A85] focus:outline-none"
                             />
                             <button
                               type="submit"
-                              className="rounded-xl bg-white/10 px-3 py-1.5 text-xs font-bold text-white hover:bg-[#FF2A85]/35 transition"
+                              className="shrink-0 rounded-xl bg-white/10 px-3 py-2 text-xs font-bold text-white hover:bg-[#FF2A85]/35 transition"
                             >
                               Ответить
                             </button>
@@ -3660,13 +3720,13 @@ export default function HomePage() {
           )}
 
           {activeTab === "chat" && (
-            <div className="rounded-2xl border border-purple-500/20 bg-[#130926]/90 p-4 flex flex-col min-h-[520px]">
+            <div className="rounded-2xl border border-purple-500/20 bg-[#130926]/90 p-3.5 sm:p-4 flex flex-col min-h-[480px]">
               <div className="flex items-center justify-between border-b border-purple-500/15 pb-3 mb-3">
-                <div>
-                  <h2 className="text-sm font-black text-white">
+                <div className="min-w-0">
+                  <h2 className="text-sm font-black text-white truncate">
                     Чат канала #{activeRoom.name}
                   </h2>
-                  <p className="text-xs text-purple-200/70">
+                  <p className="text-xs text-purple-200/70 break-words">
                     {activeRoom.topic}
                   </p>
                 </div>
@@ -3674,7 +3734,7 @@ export default function HomePage() {
 
               {pinnedMessage && (
                 <div className="mb-3 rounded-xl border border-amber-400/35 bg-amber-950/20 px-3 py-2 flex items-center justify-between gap-2 text-xs">
-                  <div className="min-w-0">
+                  <div className="min-w-0 break-words">
                     <span className="font-extrabold text-amber-300">
                       Закреплено ({pinnedMessage.handle}):{" "}
                     </span>
@@ -3729,14 +3789,14 @@ export default function HomePage() {
                             {senderAcc ? senderAcc.username : msg.author}
                           </button>
                           <VerifiedBadge account={senderAcc} size="sm" />
-                          <span className="text-[11px] text-purple-200/60">
+                          <span className="text-[11px] text-purple-200/60 truncate">
                             {msg.handle} · {msg.createdAt}
                             {msg.editedAt ? ` · ред. ${msg.editedAt}` : ""}
                           </span>
                         </div>
 
                         {canManage && (
-                          <div className="flex items-center gap-1">
+                          <div className="flex items-center gap-1 shrink-0">
                             <button
                               type="button"
                               onClick={() => handleTogglePinMessage(msg.id)}
@@ -3773,12 +3833,12 @@ export default function HomePage() {
                             onChange={(e) =>
                               setEditingMessageText(e.target.value)
                             }
-                            className="flex-1 rounded-lg border border-purple-500/30 bg-[#130926] px-2.5 py-1 text-xs text-white focus:border-[#FF2A85] focus:outline-none"
+                            className="min-w-0 flex-1 rounded-lg border border-purple-500/30 bg-[#130926] px-2.5 py-1.5 text-xs text-white focus:border-[#FF2A85] focus:outline-none"
                           />
                           <button
                             type="button"
                             onClick={() => handleSaveEditMessage(msg.id)}
-                            className="rounded-lg bg-gradient-to-r from-[#9D4EDD] to-[#FF2A85] px-2.5 py-1 text-xs font-bold text-white"
+                            className="shrink-0 rounded-lg bg-gradient-to-r from-[#9D4EDD] to-[#FF2A85] px-2.5 py-1.5 text-xs font-bold text-white"
                           >
                             Сохранить
                           </button>
@@ -3816,11 +3876,11 @@ export default function HomePage() {
                   value={chatText}
                   onChange={(e) => setChatText(e.target.value)}
                   placeholder={`Сообщение в #${activeRoom.name}...`}
-                  className="flex-1 rounded-xl border border-purple-500/25 bg-[#090414] px-3.5 py-2.5 text-sm text-white placeholder-purple-300/40 focus:border-[#FF2A85] focus:outline-none"
+                  className="min-w-0 flex-1 rounded-xl border border-purple-500/25 bg-[#090414] px-3.5 py-2.5 text-sm text-white placeholder-purple-300/40 focus:border-[#FF2A85] focus:outline-none"
                 />
                 <button
                   type="submit"
-                  className="inline-flex items-center gap-1.5 rounded-xl bg-gradient-to-r from-[#9D4EDD] to-[#FF2A85] px-4 py-2.5 text-xs font-extrabold text-white hover:opacity-95 transition"
+                  className="inline-flex shrink-0 items-center gap-1.5 rounded-xl bg-gradient-to-r from-[#9D4EDD] to-[#FF2A85] px-3.5 sm:px-4 py-2.5 text-xs font-extrabold text-white hover:opacity-95 transition"
                 >
                   <Send className="h-3.5 w-3.5" />
                   <span>Отправить</span>
@@ -3831,7 +3891,7 @@ export default function HomePage() {
 
           {activeTab === "friends" && (
             <div className="space-y-4">
-              <div className="rounded-2xl border border-purple-500/20 bg-[#130926]/90 p-4 space-y-3">
+              <div className="rounded-2xl border border-purple-500/20 bg-[#130926]/90 p-3.5 sm:p-4 space-y-3">
                 <h2 className="text-base font-black text-white">
                   Добавить друга по @handle
                 </h2>
@@ -3841,12 +3901,12 @@ export default function HomePage() {
                     value={friendHandleInput}
                     onChange={(e) => setFriendHandleInput(e.target.value)}
                     placeholder="@handle пользователя"
-                    className="flex-1 rounded-xl border border-purple-500/25 bg-[#090414] px-3.5 py-2 text-sm text-white placeholder-purple-300/40 focus:border-[#FF2A85] focus:outline-none"
+                    className="min-w-0 flex-1 rounded-xl border border-purple-500/25 bg-[#090414] px-3.5 py-2.5 text-sm text-white placeholder-purple-300/40 focus:border-[#FF2A85] focus:outline-none"
                   />
                   <button
                     type="button"
                     onClick={() => handleAddFriend()}
-                    className="inline-flex items-center justify-center gap-1.5 rounded-xl bg-gradient-to-r from-[#9D4EDD] to-[#FF2A85] px-4 py-2 text-xs font-extrabold text-white"
+                    className="inline-flex items-center justify-center gap-1.5 rounded-xl bg-gradient-to-r from-[#9D4EDD] to-[#FF2A85] px-4 py-2.5 text-xs font-extrabold text-white"
                   >
                     <UserPlus className="h-4 w-4" />
                     <span>Добавить</span>
@@ -3859,7 +3919,7 @@ export default function HomePage() {
                 )}
               </div>
 
-              <div className="rounded-2xl border border-purple-500/20 bg-[#130926]/90 p-4 space-y-3">
+              <div className="rounded-2xl border border-purple-500/20 bg-[#130926]/90 p-3.5 sm:p-4 space-y-3">
                 <h3 className="text-sm font-black text-white">
                   Мои друзья ({friendsList.length})
                 </h3>
@@ -3900,7 +3960,7 @@ export default function HomePage() {
                           type="button"
                           onClick={() => handleRemoveFriend(fr.handle)}
                           title="Удалить из друзей"
-                          className="rounded-lg p-1.5 text-purple-200/65 hover:bg-rose-950/60 hover:text-rose-300"
+                          className="shrink-0 rounded-lg p-1.5 text-purple-200/65 hover:bg-rose-950/60 hover:text-rose-300"
                         >
                           <UserMinus className="h-4 w-4" />
                         </button>
@@ -3911,7 +3971,7 @@ export default function HomePage() {
               </div>
 
               {suggestedAccounts.length > 0 && (
-                <div className="rounded-2xl border border-purple-500/20 bg-[#130926]/90 p-4 space-y-3">
+                <div className="rounded-2xl border border-purple-500/20 bg-[#130926]/90 p-3.5 sm:p-4 space-y-3">
                   <h3 className="text-sm font-black text-white">
                     Участники орбиты
                   </h3>
@@ -3945,7 +4005,7 @@ export default function HomePage() {
                         <button
                           type="button"
                           onClick={() => handleAddFriend(acc.handle)}
-                          className="inline-flex items-center gap-1 rounded-lg border border-fuchsia-500/35 bg-[#9D4EDD]/20 px-2.5 py-1.5 text-[11px] font-bold text-pink-200 hover:bg-[#9D4EDD]/35"
+                          className="inline-flex shrink-0 items-center gap-1 rounded-lg border border-fuchsia-500/35 bg-[#9D4EDD]/20 px-2.5 py-1.5 text-[11px] font-bold text-pink-200 hover:bg-[#9D4EDD]/35"
                         >
                           <UserPlus className="h-3.5 w-3.5" />
                           <span>В друзья</span>
@@ -3994,10 +4054,10 @@ export default function HomePage() {
                 </div>
               </div>
 
-              <div className="p-5 space-y-5">
+              <div className="p-4 sm:p-5 space-y-5">
                 <div className="flex flex-wrap items-end justify-between gap-4 -mt-12">
-                  <div className="flex items-end gap-3.5">
-                    <div className="relative">
+                  <div className="flex items-end gap-3 sm:gap-3.5 min-w-0">
+                    <div className="relative shrink-0">
                       <AvatarBadge
                         name={profileUsername || currentUser.username}
                         src={profileAvatar}
@@ -4020,14 +4080,14 @@ export default function HomePage() {
                         <Camera className="h-3.5 w-3.5" />
                       </button>
                     </div>
-                    <div className="pb-1">
+                    <div className="pb-1 min-w-0">
                       <div className="flex items-center gap-1.5">
-                        <h2 className="text-lg font-black text-white">
+                        <h2 className="text-base sm:text-lg font-black text-white truncate">
                           {profileUsername || currentUser.username}
                         </h2>
                         <VerifiedBadge account={currentUser} size="md" />
                       </div>
-                      <div className="text-xs text-purple-200/75">
+                      <div className="text-xs text-purple-200/75 break-words">
                         {currentUser.handle} ·{" "}
                         {accountBadgeLabel(currentUser.accountType)} ·{" "}
                         {formatSubscribers(currentUser.subscribers)} подписчиков
@@ -4056,7 +4116,7 @@ export default function HomePage() {
                         key={preset.id}
                         type="button"
                         onClick={() => setProfileBanner(preset.gradient)}
-                        className={`rounded-xl border p-2 text-left text-[11px] font-bold text-white transition ${
+                        className={`rounded-xl border p-2.5 text-left text-[11px] font-bold text-white transition ${
                           profileBanner === preset.gradient
                             ? "border-pink-400 ring-2 ring-pink-400/30"
                             : "border-purple-500/20 opacity-85 hover:opacity-100"
@@ -4078,7 +4138,7 @@ export default function HomePage() {
                       type="text"
                       value={profileUsername}
                       onChange={(e) => setProfileUsername(e.target.value)}
-                      className="w-full rounded-xl border border-purple-500/25 bg-[#090414] px-3.5 py-2 text-sm text-white focus:border-[#FF2A85] focus:outline-none"
+                      className="w-full rounded-xl border border-purple-500/25 bg-[#090414] px-3.5 py-2.5 text-sm text-white focus:border-[#FF2A85] focus:outline-none"
                     />
                   </div>
 
@@ -4091,7 +4151,7 @@ export default function HomePage() {
                       onChange={(e) =>
                         setProfilePresence(e.target.value as PresenceKind)
                       }
-                      className="w-full rounded-xl border border-purple-500/25 bg-[#090414] px-3.5 py-2 text-sm text-white focus:border-[#FF2A85] focus:outline-none"
+                      className="w-full rounded-xl border border-purple-500/25 bg-[#090414] px-3.5 py-2.5 text-sm text-white focus:border-[#FF2A85] focus:outline-none"
                     >
                       <option value="online">Онлайн</option>
                       <option value="building">В сборке</option>
@@ -4109,7 +4169,7 @@ export default function HomePage() {
                     value={profileMood}
                     onChange={(e) => setProfileMood(e.target.value)}
                     placeholder="Например: Собираю новый релиз"
-                    className="w-full rounded-xl border border-purple-500/25 bg-[#090414] px-3.5 py-2 text-sm text-white placeholder-purple-300/40 focus:border-[#FF2A85] focus:outline-none"
+                    className="w-full rounded-xl border border-purple-500/25 bg-[#090414] px-3.5 py-2.5 text-sm text-white placeholder-purple-300/40 focus:border-[#FF2A85] focus:outline-none"
                   />
                 </div>
 
@@ -4122,7 +4182,7 @@ export default function HomePage() {
                     value={profileBio}
                     onChange={(e) => setProfileBio(e.target.value)}
                     placeholder="Расскажи коротко о себе..."
-                    className="w-full rounded-xl border border-purple-500/25 bg-[#090414] px-3.5 py-2 text-sm text-white placeholder-purple-300/40 focus:border-[#FF2A85] focus:outline-none"
+                    className="w-full rounded-xl border border-purple-500/25 bg-[#090414] px-3.5 py-2.5 text-sm text-white placeholder-purple-300/40 focus:border-[#FF2A85] focus:outline-none"
                   />
                 </div>
 
@@ -4136,7 +4196,7 @@ export default function HomePage() {
                     value={profileNewPassword}
                     onChange={(e) => setProfileNewPassword(e.target.value)}
                     placeholder="Новый пароль (мин. 4 символа)"
-                    className="w-full rounded-xl border border-purple-500/25 bg-[#090414] px-3.5 py-2 text-sm text-white placeholder-purple-300/40 focus:border-[#FF2A85] focus:outline-none"
+                    className="w-full rounded-xl border border-purple-500/25 bg-[#090414] px-3.5 py-2.5 text-sm text-white placeholder-purple-300/40 focus:border-[#FF2A85] focus:outline-none"
                   />
                 </div>
 
@@ -4167,9 +4227,59 @@ export default function HomePage() {
         </main>
       </div>
 
+      {/* Нижняя панель навигации для телефона */}
+      <nav className="fixed bottom-0 inset-x-0 z-30 border-t border-purple-500/25 bg-[#090414]/95 backdrop-blur-md md:hidden">
+        <div className="mx-auto grid max-w-md grid-cols-4 gap-1 px-2 py-1.5">
+          <button
+            type="button"
+            onClick={() => setActiveTab("feed")}
+            className={`flex flex-col items-center justify-center rounded-xl py-1.5 text-[11px] font-extrabold transition ${
+              activeTab === "feed"
+                ? "bg-gradient-to-r from-[#9D4EDD] to-[#FF2A85] text-white"
+                : "text-purple-200/75 hover:text-white"
+            }`}
+          >
+            <span>Лента</span>
+          </button>
+          <button
+            type="button"
+            onClick={() => setActiveTab("chat")}
+            className={`flex flex-col items-center justify-center rounded-xl py-1.5 text-[11px] font-extrabold transition ${
+              activeTab === "chat"
+                ? "bg-gradient-to-r from-[#9D4EDD] to-[#FF2A85] text-white"
+                : "text-purple-200/75 hover:text-white"
+            }`}
+          >
+            <span>Чат</span>
+          </button>
+          <button
+            type="button"
+            onClick={() => setActiveTab("friends")}
+            className={`flex flex-col items-center justify-center rounded-xl py-1.5 text-[11px] font-extrabold transition ${
+              activeTab === "friends"
+                ? "bg-gradient-to-r from-[#9D4EDD] to-[#FF2A85] text-white"
+                : "text-purple-200/75 hover:text-white"
+            }`}
+          >
+            <span>Друзья ({friendsList.length})</span>
+          </button>
+          <button
+            type="button"
+            onClick={() => setActiveTab("profile")}
+            className={`flex flex-col items-center justify-center rounded-xl py-1.5 text-[11px] font-extrabold transition ${
+              activeTab === "profile"
+                ? "bg-gradient-to-r from-[#9D4EDD] to-[#FF2A85] text-white"
+                : "text-purple-200/75 hover:text-white"
+            }`}
+          >
+            <span>Профиль</span>
+          </button>
+        </div>
+      </nav>
+
       {showAddAccountModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 p-4 backdrop-blur-sm">
-          <div className="w-full max-w-md rounded-2xl border border-purple-500/30 bg-[#130926] p-5 shadow-2xl space-y-4">
+          <div className="w-full max-w-md max-h-[90vh] overflow-y-auto rounded-2xl border border-purple-500/30 bg-[#130926] p-5 shadow-2xl space-y-4">
             <div className="flex items-center justify-between">
               <h3 className="text-base font-black text-white">
                 Переключение или создание аккаунта
@@ -4255,43 +4365,43 @@ export default function HomePage() {
                 value={addAccUsername}
                 onChange={(e) => setAddAccUsername(e.target.value)}
                 placeholder="Имя"
-                className="w-full rounded-xl border border-purple-500/25 bg-[#090414] px-3 py-2 text-xs text-white placeholder-purple-300/40 focus:border-[#FF2A85] focus:outline-none"
+                className="w-full rounded-xl border border-purple-500/25 bg-[#090414] px-3 py-2.5 text-xs text-white placeholder-purple-300/40 focus:border-[#FF2A85] focus:outline-none"
               />
               <input
                 type="text"
                 value={addAccHandle}
                 onChange={(e) => setAddAccHandle(e.target.value)}
                 placeholder="@handle"
-                className="w-full rounded-xl border border-purple-500/25 bg-[#090414] px-3 py-2 text-xs text-white placeholder-purple-300/40 focus:border-[#FF2A85] focus:outline-none"
+                className="w-full rounded-xl border border-purple-500/25 bg-[#090414] px-3 py-2.5 text-xs text-white placeholder-purple-300/40 focus:border-[#FF2A85] focus:outline-none"
               />
               <input
                 type="email"
                 value={addAccEmail}
                 onChange={(e) => setAddAccEmail(e.target.value)}
                 placeholder="you@gmail.com"
-                className="w-full rounded-xl border border-purple-500/25 bg-[#090414] px-3 py-2 text-xs text-white placeholder-purple-300/40 focus:border-[#FF2A85] focus:outline-none"
+                className="w-full rounded-xl border border-purple-500/25 bg-[#090414] px-3 py-2.5 text-xs text-white placeholder-purple-300/40 focus:border-[#FF2A85] focus:outline-none"
               />
-              <div className="grid grid-cols-2 gap-2">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                 <input
                   type="password"
                   value={addAccPassword}
                   onChange={(e) => setAddAccPassword(e.target.value)}
                   placeholder="Пароль"
-                  className="w-full rounded-xl border border-purple-500/25 bg-[#090414] px-3 py-2 text-xs text-white placeholder-purple-300/40 focus:border-[#FF2A85] focus:outline-none"
+                  className="w-full rounded-xl border border-purple-500/25 bg-[#090414] px-3 py-2.5 text-xs text-white placeholder-purple-300/40 focus:border-[#FF2A85] focus:outline-none"
                 />
                 <input
                   type="password"
                   value={addAccPasswordConfirm}
                   onChange={(e) => setAddAccPasswordConfirm(e.target.value)}
                   placeholder="Повтор пароля"
-                  className="w-full rounded-xl border border-purple-500/25 bg-[#090414] px-3 py-2 text-xs text-white placeholder-purple-300/40 focus:border-[#FF2A85] focus:outline-none"
+                  className="w-full rounded-xl border border-purple-500/25 bg-[#090414] px-3 py-2.5 text-xs text-white placeholder-purple-300/40 focus:border-[#FF2A85] focus:outline-none"
                 />
               </div>
 
               <button
                 type="submit"
                 disabled={addAccSubmitting}
-                className="w-full rounded-xl bg-gradient-to-r from-[#9D4EDD] to-[#FF2A85] py-2 text-xs font-extrabold text-white disabled:opacity-50"
+                className="w-full rounded-xl bg-gradient-to-r from-[#9D4EDD] to-[#FF2A85] py-2.5 text-xs font-extrabold text-white disabled:opacity-50"
               >
                 {addAccSubmitting ? "Создаём..." : "Создать и войти"}
               </button>
@@ -4327,25 +4437,27 @@ export default function HomePage() {
               </button>
             </div>
 
-            <div className="p-5 space-y-4">
+            <div className="p-4 sm:p-5 space-y-4">
               <div className="flex items-end justify-between gap-3 -mt-12">
-                <div className="flex items-end gap-3">
+                <div className="flex items-end gap-3 min-w-0">
                   <AvatarBadge
                     name={inspectedAccount?.username || inspectedHandle}
                     src={inspectedAccount?.avatar || null}
                     size="lg"
                     presence={inspectedAccount?.presence}
                   />
-                  <div className="pb-1">
+                  <div className="pb-1 min-w-0">
                     <div className="flex items-center gap-1.5">
-                      <h3 className="text-lg font-black text-white">
+                      <h3 className="text-base sm:text-lg font-black text-white truncate">
                         {inspectedAccount?.username || inspectedHandle}
                       </h3>
                       <VerifiedBadge account={inspectedAccount} size="md" />
                     </div>
-                    <div className="flex items-center gap-1.5 text-xs text-purple-200/75">
-                      <AtSign className="h-3 w-3 text-pink-300" />
-                      <span>{inspectedHandle.replace(/^@/, "")}</span>
+                    <div className="flex flex-wrap items-center gap-1.5 text-xs text-purple-200/75">
+                      <AtSign className="h-3 w-3 shrink-0 text-pink-300" />
+                      <span className="truncate">
+                        {inspectedHandle.replace(/^@/, "")}
+                      </span>
                       <button
                         type="button"
                         onClick={() => handleCopyHandle(inspectedHandle)}
@@ -4369,13 +4481,13 @@ export default function HomePage() {
               </div>
 
               {inspectedAccount?.mood && (
-                <div className="rounded-xl border border-purple-500/20 bg-[#090414]/70 px-3 py-2 text-xs text-pink-200">
+                <div className="rounded-xl border border-purple-500/20 bg-[#090414]/70 px-3 py-2 text-xs text-pink-200 break-words">
                   Статус: {inspectedAccount.mood}
                 </div>
               )}
 
               {inspectedAccount?.bio && (
-                <p className="text-xs leading-relaxed text-purple-100/90">
+                <p className="text-xs leading-relaxed text-purple-100/90 break-words">
                   {inspectedAccount.bio}
                 </p>
               )}
@@ -4397,7 +4509,7 @@ export default function HomePage() {
                       <div className="text-[11px] text-purple-200/60">
                         {p.createdAt}
                       </div>
-                      <p className="whitespace-pre-wrap text-white">
+                      <p className="whitespace-pre-wrap break-words text-white">
                         {p.text || "Медиапост"}
                       </p>
                     </div>
